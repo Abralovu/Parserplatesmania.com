@@ -6,6 +6,7 @@ from typing import Optional
 from bs4 import BeautifulSoup
 
 from core.anti_bot import fetch_page_playwright, BrowserSession, human_delay, is_blocked
+from core.downloader import download_photo
 from storage.models import PlateRecord
 from storage.database import save_batch, get_count
 from utils.logger import get_logger
@@ -176,6 +177,9 @@ def scrape_range(
                         if html:
                             record = parse_plate_page(html, pid, country)
                             if record:
+                                # Скачиваем фото локально
+                                local = download_photo(record.photo_url, pid, country)
+                                record.local_path = local
                                 batch.append(record)
                         processed += 1
 

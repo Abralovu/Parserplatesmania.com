@@ -66,6 +66,19 @@ def cmd_status(args):
     console.print(table)
 
 
+def cmd_export(args):
+    """Экспорт в CSV."""
+    from utils.export import export_csv
+    path = asyncio.run(export_csv(
+        country=args.country if args.country != "all" else None,
+        output_file=args.output,
+    ))
+    if path:
+        console.print(f"[green]Exported to: {path}[/green]")
+    else:
+        console.print("[red]No data found[/red]")
+
+
 def cmd_reset(args):
     """Сброс checkpoint для страны."""
     reset_checkpoint(args.country)
@@ -93,6 +106,12 @@ def main():
     p_status = subparsers.add_parser("status", help="Show progress")
     p_status.add_argument("--countries", default="ru,de,us", help="Comma-separated country codes")
     p_status.set_defaults(func=cmd_status)
+
+    # --- Команда: export ---
+    p_export = subparsers.add_parser("export", help="Export to CSV")
+    p_export.add_argument("--country", default="all", help="Country code or 'all'")
+    p_export.add_argument("--output", default=None, help="Output file path")
+    p_export.set_defaults(func=cmd_export)
 
     # --- Команда: reset ---
     p_reset = subparsers.add_parser("reset", help="Reset checkpoint")
