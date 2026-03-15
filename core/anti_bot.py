@@ -1,29 +1,19 @@
 import random
 import time
-from playwright.sync_api import sync_playwright, BrowserContext, Page, Playwright
+from playwright.sync_api import sync_playwright, Page
 from utils.logger import get_logger
-from config.settings import DELAY_MIN, DELAY_MAX, PROXY_URL
+from config.settings import DELAY_MIN, DELAY_MAX, PROXY_URL, CHROME_PROFILE
 
 logger = get_logger(__name__)
 
-CHROME_PROFILE = "/Users/akhrorabrolov/Library/Application Support/Google/Chrome/Profile 3"
-
-# Сколько страниц парсить в одной сессии браузера
-# После этого перезапускаем браузер — профилактика утечек памяти
 SESSION_SIZE = 500
 
 
 class BrowserSession:
     """
     Менеджер браузерной сессии.
-    
-    Использование:
-        with BrowserSession("ru") as session:
-            html = session.fetch("https://platesmania.com/ru/nomer123")
-    
-    Браузер открывается ОДИН РАЗ на весь блок with.
-    warmup делается ОДИН РАЗ при входе.
-    Все fetch внутри — быстрые переходы без повторного KillBot.
+    Один браузер открывается на SESSION_SIZE запросов.
+    KillBot проходится один раз при старте сессии.
     """
 
     def __init__(self, country: str):
@@ -31,7 +21,6 @@ class BrowserSession:
         self._pw = None
         self._context = None
         self._page = None
-        self._requests = 0
 
     def __enter__(self):
         self._pw = sync_playwright().start()
@@ -54,13 +43,14 @@ class BrowserSession:
             pass
 
     def _warmup(self):
-        """Один раз проходим KillBot через галерею."""
+        """Прогрев — проходим KillBot через галерею страны."""
         url = f"https://platesmania.com/{self.country}/gallery"
         logger.info(f"Browser warmup: {url}")
         self._page.goto(url, wait_until="domcontentloaded", timeout=20000)
         try:
             self._page.wait_for_function(
-                "() => !document.title.includes('верификац') && !document.title.includes('verification')",
+                "() => !document.title.includes('верификац') && "
+                "!document.title.includes('verification')",
                 timeout=15000
             )
             logger.info("KillBot passed — session ready")
@@ -68,43 +58,32 @@ class BrowserSession:
             logger.warning("KillBot warmup timeout — proceeding anyway")
 
     def fetch(self, url: str) -> str | None:
-        """
-        Загружает страницу в текущей сессии.
-        Быстро — браузер уже открыт, KillBot уже пройден.
-        """
-        human_delay()
-        self._page.goto(url, wait_until="domcontentloaded", timeout=15000)
+        """Загружает страницу. Задержка встроена."""
+        _human_delay()
+        try:
+            self._page.goto(url, wait_until="domcontentloaded", timeout=15000)
+        except Exception as e:
+            logger.error(f"Timeout/error fetching {url}: {e}")
+            return None
+
         self._page.wait_for_timeout(1500)
         html = self._page.content()
-        self._requests += 1
 
-        if is_blocked(html):
-            logger.warning(f"Blocked: {url} — re-warming")
-            self._warmup()  # Переварм если вдруг заблокировало
+        if _is_blocked(html):
+            logger.warning(f"Blocked on {url} — re-warming")
+            self._warmup()
             return None
 
         return html
 
 
-def fetch_page_playwright(url: str) -> str | None:
-    """
-    Одиночный fetch — для тестов и retry логики в scraper.py
-    Для массового парсинга используй BrowserSession напрямую.
-    """
-    parts = url.split("/")
-    country = parts[3] if len(parts) > 3 else "ru"
-
-    with BrowserSession(country) as session:
-        return session.fetch(url)
-
-
-def human_delay() -> None:
+def _human_delay() -> None:
     delay = random.uniform(DELAY_MIN, DELAY_MAX)
     logger.debug(f"Sleeping {delay:.2f}s")
     time.sleep(delay)
 
 
-def is_blocked(html: str) -> bool:
+def _is_blocked(html: str) -> bool:
     markers = [
         "killbot user verification",
         "проверка пользователя",

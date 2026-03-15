@@ -60,10 +60,23 @@ def cmd_status(args):
 
     for country in countries:
         count = asyncio.run(get_count(country if country != "all" else None))
-        checkpoint = load_checkpoint(country)
+        checkpoint = load_checkpoint(country, 1)
         table.add_row(country, str(count), str(checkpoint))
 
     console.print(table)
+
+
+def cmd_excel(args):
+    """Экспорт в Excel с фото внутри."""
+    from utils.export_excel import export_excel_with_photos
+    path = asyncio.run(export_excel_with_photos(
+        country=args.country if args.country != "all" else None,
+    ))
+    if path:
+        console.print(f"[green]Excel exported: {path}[/green]")
+        os.system(f"open '{path}'")
+    else:
+        console.print("[red]No data found[/red]")
 
 
 def cmd_export(args):
@@ -106,6 +119,11 @@ def main():
     p_status = subparsers.add_parser("status", help="Show progress")
     p_status.add_argument("--countries", default="ru,de,us", help="Comma-separated country codes")
     p_status.set_defaults(func=cmd_status)
+
+    # --- Команда: excel ---
+    p_excel = subparsers.add_parser("excel", help="Export to Excel with photos")
+    p_excel.add_argument("--country", default="all", help="Country code or 'all'")
+    p_excel.set_defaults(func=cmd_excel)
 
     # --- Команда: export ---
     p_export = subparsers.add_parser("export", help="Export to CSV")

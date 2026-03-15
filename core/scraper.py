@@ -1,70 +1,56 @@
 import re
 import time
 import asyncio
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional
 from bs4 import BeautifulSoup
 
-from core.anti_bot import fetch_page_playwright, BrowserSession, human_delay, is_blocked
+from core.anti_bot import BrowserSession, SESSION_SIZE
 from core.downloader import download_photo
 from storage.models import PlateRecord
-from storage.database import save_batch, get_count
+from storage.database import save_batch
 from utils.logger import get_logger
-from utils.retry import scraper_retry
 from utils.checkpoint import save_checkpoint, load_checkpoint
-from config.settings import BASE_URL, THREADS
+from config.settings import BASE_URL
 
 logger = get_logger(__name__)
 
-# Каждые N записей сохраняем checkpoint
 CHECKPOINT_EVERY = 100
 
-
-@scraper_retry
-def fetch_page(url: str) -> Optional[str]:
-    """
-    Загружает HTML страницы.
-    Декоратор @scraper_retry автоматически повторит
-    запрос до 5 раз если упадёт ConnectionError/TimeoutError.
-    """
-    
-    html = fetch_page_playwright(url)
-    return html
 
 def parse_plate_page(html: str, plate_id: int, country: str) -> Optional[PlateRecord]:
     """
     Парсит HTML страницы одного номера.
-    Структура сайта (проверено на реальных страницах):
-    - Номер:  <h1>
-    - Фото:   <img class="img-responsive center-block"> где src содержит /m/
-    - Инфо:   <title> содержит "номер, Марка Модель (Регион)"
+    Структура сайта:
+      Номер  → <h1>
+      Фото   → <img class="img-responsive"> с /m/ в src
+      Инфо   → <title>: "номер, Марка Модель (Регион) Номер Страны"
     """
     soup = BeautifulSoup(html, "lxml")
 
-    # --- Проверка что это страница номера а не редирект ---
+    # Защита от KillBot страниц
     title_tag = soup.find("title")
     title_text = title_tag.get_text(strip=True) if title_tag else ""
     if "верификац" in title_text.lower() or "verification" in title_text.lower():
-        raise ConnectionError(f"KillBot page returned for id={plate_id}")
+        raise ConnectionError(f"KillBot page for id={plate_id}")
 
-    # Проверяем H1 — если это каталог а не номер, пропускаем
-    h1_check = soup.find("h1")
-    h1_text = h1_check.get_text(strip=True) if h1_check else ""
-    CATALOG_MARKERS = ["номера росси", "номера укра", "номера казах", "all license", "photos"]
-    if any(m in h1_text.lower() for m in CATALOG_MARKERS):
-        logger.debug(f"Catalog page returned for id={plate_id}, skipping")
+    # Защита от страниц каталога
+    h1_tag = soup.find("h1")
+    h1_text = h1_tag.get_text(strip=True) if h1_tag else ""
+    SKIP_MARKERS = [
+        "номера росси", "номера укра", "номера казах",
+        "all license", "photos", "номера нет на сайте", "not found"
+    ]
+    if any(m in h1_text.lower() for m in SKIP_MARKERS):
+        logger.debug(f"Skip id={plate_id}: not a plate page")
         return None
 
-    # --- Номер --- из <h1>
-    plate_number = None
-    h1 = soup.find("h1")
-    if h1:
-        plate_number = h1.get_text(strip=True)
+    # Номер
+    plate_number = h1_text or None
     if not plate_number:
-        logger.warning(f"No plate number found for id={plate_id}")
+        logger.warning(f"No plate number for id={plate_id}")
         return None
 
-    # --- Фото --- img с классом img-responsive и /m/ в src (medium size)
+    # Фото — img с /m/ в src (medium размер)
     photo_url = None
     for img in soup.find_all("img", class_="img-responsive"):
         src = img.get("src", "")
@@ -72,23 +58,29 @@ def parse_plate_page(html: str, plate_id: int, country: str) -> Optional[PlateRe
             photo_url = src
             break
     if not photo_url:
-        logger.warning(f"No photo found for id={plate_id}")
+        logger.warning(f"No photo for id={plate_id}")
         return None
 
-    # --- Марка/Модель/Регион --- парсим из title
+    # Марка / Модель / Регион из title
     # Формат: "а639нм14, Lexus RX (Республика Саха (Якутия)) Номер России"
     car_brand, car_model, region = None, None, None
     if "," in title_text:
-        rest = title_text.split(",", 1)[1].strip()  # "Lexus RX (Регион) Номер России"
-        region_match = re.search(r"\(([^)]+)\)", rest)
+        rest = title_text.split(",", 1)[1].strip()
+        # Регион — последние скобки перед "Номер"
+        region_match = re.search(r"\(([^()]+)\)\s*Номер", rest)
+        if not region_match:
+            region_match = re.search(r"\(([^()]+)\)", rest)
         if region_match:
             region = region_match.group(1).strip()
-        car_info = re.sub(r"\([^)]+\)", "", rest)  # убираем скобки
-        car_info = re.sub(r"Номер.*$", "", car_info).strip()  # убираем "Номер России"
-        parts = car_info.split(None, 1)  # ["Lexus", "RX"]
+        # Марка и модель — убираем скобки и хвост
+        car_info = re.sub(r"\([^()]*\)", "", rest)
+        car_info = re.sub(r"\s*Номер.*$", "", car_info, flags=re.IGNORECASE).strip(" ,)(")
+        parts = car_info.split(None, 1)
         if parts:
-            car_brand = parts[0]
-            car_model = parts[1] if len(parts) > 1 else None
+            car_brand = parts[0].strip(" ,)(")
+            car_model = parts[1].strip(" ,)(") if len(parts) > 1 else None
+            if car_model in (")", "(", "))", ")(", ""):
+                car_model = None
 
     return PlateRecord(
         plate_id=plate_id,
@@ -103,56 +95,18 @@ def parse_plate_page(html: str, plate_id: int, country: str) -> Optional[PlateRe
     )
 
 
-def _extract_meta(soup: BeautifulSoup, keyword: str) -> Optional[str]:
-    """Ищет значение в мета-тегах по ключевому слову."""
-    tag = soup.find("meta", attrs={"name": re.compile(keyword, re.I)})
-    if tag:
-        return tag.get("content", "").strip() or None
-    return None
-
-
-def _extract_text(soup: BeautifulSoup, keyword: str) -> Optional[str]:
-    """Ищет текст в любом теге у которого class/id содержит ключевое слово."""
-    tag = soup.find(class_=re.compile(keyword, re.I))
-    if tag:
-        return tag.get_text(strip=True) or None
-    return None
-
-
-def scrape_one(plate_id: int, country: str) -> Optional[PlateRecord]:
+def scrape_range(country: str, start_id: int, end_id: int, resume: bool = True) -> None:
     """
-    Полный цикл для одного номера:
-    загрузить страницу → распарсить → вернуть запись.
-    human_delay() вызывается ДО запроса — не после,
-    чтобы задержка была даже если запрос упал.
-    """
-    human_delay()
-    url = f"{BASE_URL}/{country}/nomer{plate_id}"
-    html = fetch_page(url)
-    if html is None:
-        return None
-    return parse_plate_page(html, plate_id, country)
-
-
-def scrape_range(
-    country: str,
-    start_id: int,
-    end_id: int,
-    resume: bool = True,
-) -> None:
-    """
-    Главная функция парсинга диапазона ID.
+    Парсит диапазон ID для указанной страны.
     
-    Использует BrowserSession — один браузер на SESSION_SIZE записей.
-    Это в 5-8 раз быстрее чем открывать браузер на каждый запрос.
+    resume=True  — продолжает с последнего checkpoint
+    resume=False — начинает с start_id (--fresh флаг)
     
-    Поток работы:
-    1. Открыть браузер → warmup (KillBot) → парсить SESSION_SIZE номеров
-    2. Сохранить checkpoint → закрыть браузер
-    3. Повторить с новой сессией
+    Сессии по SESSION_SIZE записей:
+    браузер открывается один раз → парсит SESSION_SIZE страниц → закрывается
+    это предотвращает утечки памяти при многочасовом парсинге
     """
-    from core.anti_bot import SESSION_SIZE
-    actual_start = load_checkpoint(country) if resume else start_id
+    actual_start = load_checkpoint(country, start_id) if resume else start_id
     if actual_start > start_id:
         logger.info(f"Resuming from checkpoint: id={actual_start}")
 
@@ -163,24 +117,26 @@ def scrape_range(
 
     logger.info(f"Starting: country={country}, ids={actual_start}..{end_id}, total={total}")
 
-    # Разбиваем на сессии по SESSION_SIZE
     for session_start in range(0, total, SESSION_SIZE):
         session_ids = ids[session_start: session_start + SESSION_SIZE]
-        logger.info(f"New browser session: {session_ids[0]}..{session_ids[-1]}")
+        logger.info(f"Session: {session_ids[0]}..{session_ids[-1]}")
 
         try:
             with BrowserSession(country) as session:
                 for pid in session_ids:
                     try:
-                        url = f"https://platesmania.com/{country}/nomer{pid}"
+                        url = f"{BASE_URL}/{country}/nomer{pid}"
                         html = session.fetch(url)
-                        if html:
-                            record = parse_plate_page(html, pid, country)
-                            if record:
-                                # Скачиваем фото локально
-                                local = download_photo(record.photo_url, pid, country)
-                                record.local_path = local
-                                batch.append(record)
+                        if not html:
+                            processed += 1
+                            continue
+
+                        record = parse_plate_page(html, pid, country)
+                        if record:
+                            local = download_photo(record.photo_url, pid, country)
+                            record.local_path = local
+                            batch.append(record)
+
                         processed += 1
 
                         if processed % CHECKPOINT_EVERY == 0:
@@ -194,14 +150,16 @@ def scrape_range(
 
                     except Exception as e:
                         logger.error(f"Failed id={pid}: {e}")
-                        continue  # Не останавливаемся
+                        processed += 1
+                        continue
 
         except Exception as e:
-            logger.error(f"Session error: {e} — restarting session")
+            logger.error(f"Session crashed: {e} — restarting in 5s")
             time.sleep(5)
             continue
 
     if batch:
         asyncio.run(save_batch(batch))
 
-    logger.info(f"Done: country={country}, processed={processed}")
+    total_saved = asyncio.run(__import__("storage.database", fromlist=["get_count"]).get_count(country))
+    logger.info(f"Done: country={country}, processed={processed}, total in DB={total_saved}")
