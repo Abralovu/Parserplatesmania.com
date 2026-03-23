@@ -1,0 +1,1302 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PlatesMania Scraper</title>
+    <style>
+      @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap");
+
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      :root {
+        --bg: #050507;
+        --card: #0a0b10;
+        --input: #0f1017;
+        --line: rgba(255, 255, 255, 0.05);
+        --line2: rgba(255, 255, 255, 0.09);
+        --t1: #e8eaf2;
+        --t2: #555d7a;
+        --t3: #2a2f45;
+        --blue: #4b82f5;
+        --violet: #7c5af5;
+        --green: #0dba7a;
+        --red: #e84057;
+        --grad: linear-gradient(135deg, #4b82f5, #7c5af5);
+      }
+
+      body {
+        font-family:
+          "Inter",
+          -apple-system,
+          sans-serif;
+        background: var(--bg);
+        color: var(--t1);
+        min-height: 100vh;
+        font-size: 13px;
+        -webkit-font-smoothing: antialiased;
+        line-height: 1.5;
+      }
+
+      /* ── Header ── */
+      nav {
+        height: 48px;
+        padding: 0 20px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        border-bottom: 1px solid var(--line);
+        position: sticky;
+        top: 0;
+        z-index: 100;
+        background: rgba(5, 5, 7, 0.95);
+        backdrop-filter: blur(16px);
+      }
+      .nav-logo {
+        font-size: 13px;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+        background: var(--grad);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+      }
+      .nav-dot {
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: var(--t3);
+        transition: all 0.4s;
+      }
+      .nav-dot.live {
+        background: var(--green);
+        box-shadow: 0 0 6px rgba(13, 186, 122, 0.8);
+        animation: blink 2.5s infinite;
+      }
+      @keyframes blink {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.4;
+        }
+      }
+      .nav-state {
+        font-size: 11px;
+        color: var(--t3);
+        font-weight: 500;
+        transition: color 0.3s;
+      }
+      .nav-conn {
+        margin-left: auto;
+        font-size: 11px;
+        color: var(--t3);
+      }
+
+      /* ── Layout ── */
+      main {
+        max-width: 1240px;
+        margin: 0 auto;
+        padding: 20px;
+        display: grid;
+        grid-template-columns: 280px 1fr;
+        gap: 12px;
+        align-items: start;
+      }
+
+      /* ── Panel ── */
+      .panel {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 16px;
+        margin-bottom: 10px;
+      }
+      .panel:last-child {
+        margin-bottom: 0;
+      }
+      .panel-title {
+        font-size: 9px;
+        font-weight: 600;
+        color: var(--t3);
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        margin-bottom: 14px;
+        padding-bottom: 10px;
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      /* ── Fields ── */
+      .field {
+        margin-bottom: 10px;
+      }
+      .field:last-child {
+        margin-bottom: 0;
+      }
+      .field-label {
+        display: block;
+        font-size: 10px;
+        font-weight: 500;
+        color: var(--t2);
+        margin-bottom: 5px;
+        letter-spacing: 0.01em;
+      }
+      input,
+      select {
+        width: 100%;
+        background: var(--input);
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        padding: 8px 10px;
+        color: var(--t1);
+        font-size: 12px;
+        font-family: inherit;
+        outline: none;
+        transition:
+          border-color 0.15s,
+          box-shadow 0.15s;
+        -webkit-appearance: none;
+      }
+      input:focus,
+      select:focus {
+        border-color: rgba(75, 130, 245, 0.45);
+        box-shadow: 0 0 0 3px rgba(75, 130, 245, 0.07);
+      }
+      input::placeholder {
+        color: var(--t3);
+      }
+      select {
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='9' height='9' viewBox='0 0 24 24' fill='none' stroke='%232a2f45' stroke-width='2.5'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 10px center;
+        padding-right: 28px;
+        cursor: pointer;
+      }
+      select option {
+        background: #0f1017;
+      }
+
+      /* ── Segment tabs ── */
+      .seg {
+        display: flex;
+        background: var(--input);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 2px;
+        gap: 2px;
+      }
+      .seg-btn {
+        flex: 1;
+        padding: 6px 8px;
+        border: none;
+        border-radius: 6px;
+        font-size: 11px;
+        font-weight: 500;
+        font-family: inherit;
+        cursor: pointer;
+        color: var(--t2);
+        background: transparent;
+        transition: all 0.2s;
+        white-space: nowrap;
+      }
+      .seg-btn.on {
+        background: var(--card);
+        color: var(--t1);
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+      }
+
+      /* ── Speed cards ── */
+      .speeds {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 5px;
+      }
+      .spd {
+        background: var(--input);
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        padding: 9px 6px;
+        text-align: center;
+        cursor: pointer;
+        transition: all 0.15s;
+      }
+      .spd:hover {
+        border-color: var(--line2);
+      }
+      .spd.on {
+        border-color: rgba(75, 130, 245, 0.5);
+        background: rgba(75, 130, 245, 0.07);
+      }
+      .spd-em {
+        font-size: 16px;
+        margin-bottom: 3px;
+      }
+      .spd-name {
+        font-size: 10px;
+        font-weight: 600;
+        color: var(--t1);
+      }
+      .spd-sub {
+        font-size: 9px;
+        color: var(--t3);
+        margin-top: 1px;
+      }
+
+      /* ── Toggle row ── */
+      .trow {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 10px;
+        background: var(--input);
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        cursor: pointer;
+        user-select: none;
+        transition: border-color 0.15s;
+      }
+      .trow:hover {
+        border-color: var(--line2);
+      }
+      .trow.on {
+        border-color: rgba(75, 130, 245, 0.4);
+        background: rgba(75, 130, 245, 0.05);
+      }
+      .trow.on .trow-text {
+        color: var(--blue);
+      }
+      .trow input[type="checkbox"] {
+        width: 13px;
+        height: 13px;
+        accent-color: var(--blue);
+        cursor: pointer;
+        flex-shrink: 0;
+      }
+      .trow-text {
+        font-size: 11px;
+        color: var(--t1);
+        font-weight: 400;
+      }
+
+      /* ── Info block ── */
+      .info {
+        background: rgba(75, 130, 245, 0.05);
+        border: 1px solid rgba(75, 130, 245, 0.12);
+        border-radius: 7px;
+        padding: 9px 11px;
+        font-size: 10px;
+        color: rgba(75, 130, 245, 0.9);
+        line-height: 1.6;
+      }
+
+      /* ── Speed hint ── */
+      .spd-hint {
+        font-size: 9px;
+        color: var(--t3);
+        line-height: 1.6;
+        margin-top: 2px;
+      }
+      .spd-hint a {
+        color: var(--blue);
+        cursor: pointer;
+        text-decoration: none;
+      }
+      .spd-hint a:hover {
+        text-decoration: underline;
+      }
+
+      /* ── Custom workers ── */
+      .custom-spd {
+        margin-top: 8px;
+        padding: 10px;
+        background: var(--input);
+        border: 1px solid var(--line);
+        border-radius: 7px;
+      }
+      .custom-spd-warn {
+        font-size: 9px;
+        color: var(--t3);
+        margin-top: 5px;
+        line-height: 1.5;
+      }
+
+      /* ── Buttons ── */
+      .btn {
+        width: 100%;
+        padding: 9px 12px;
+        border: none;
+        border-radius: 8px;
+        font-size: 12px;
+        font-weight: 600;
+        font-family: inherit;
+        cursor: pointer;
+        transition: all 0.15s;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 5px;
+        letter-spacing: -0.01em;
+      }
+      .btn-run {
+        background: var(--grad);
+        color: #fff;
+        box-shadow: 0 2px 14px rgba(75, 130, 245, 0.2);
+        margin-top: 10px;
+      }
+      .btn-run:hover:not(:disabled) {
+        box-shadow: 0 4px 20px rgba(75, 130, 245, 0.35);
+        transform: translateY(-1px);
+      }
+      .btn-run:disabled {
+        opacity: 0.25;
+        cursor: not-allowed;
+        box-shadow: none;
+        transform: none;
+      }
+      .btn-stop {
+        background: transparent;
+        color: var(--red);
+        border: 1px solid rgba(232, 64, 87, 0.18);
+        margin-top: 6px;
+      }
+      .btn-stop:hover:not(:disabled) {
+        background: rgba(232, 64, 87, 0.05);
+        border-color: rgba(232, 64, 87, 0.4);
+      }
+      .btn-stop:disabled {
+        opacity: 0.15;
+        cursor: not-allowed;
+      }
+
+      .icon-btn {
+        padding: 4px 10px;
+        border: 1px solid var(--line2);
+        border-radius: 6px;
+        font-size: 10px;
+        font-weight: 500;
+        font-family: inherit;
+        cursor: pointer;
+        background: transparent;
+        color: var(--t2);
+        transition: all 0.15s;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .icon-btn:hover {
+        color: var(--t1);
+        border-color: var(--blue);
+      }
+      .icon-btn.g {
+        color: var(--green);
+        border-color: rgba(13, 186, 122, 0.2);
+      }
+      .icon-btn.g:hover {
+        background: rgba(13, 186, 122, 0.05);
+        border-color: rgba(13, 186, 122, 0.5);
+      }
+      .icon-btn.b {
+        color: var(--blue);
+        border-color: rgba(75, 130, 245, 0.2);
+      }
+      .icon-btn.b:hover {
+        background: rgba(75, 130, 245, 0.05);
+        border-color: rgba(75, 130, 245, 0.5);
+      }
+
+      /* ── Stats ── */
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 7px;
+        margin-bottom: 12px;
+      }
+      .stat {
+        background: var(--input);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 11px 8px;
+        text-align: center;
+      }
+      .stat-n {
+        font-size: 20px;
+        font-weight: 700;
+        color: var(--t1);
+        letter-spacing: -0.04em;
+        font-variant-numeric: tabular-nums;
+      }
+      .stat-l {
+        font-size: 8px;
+        color: var(--t3);
+        margin-top: 3px;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        font-weight: 600;
+      }
+
+      /* ── Progress bar ── */
+      .pbar-wrap {
+        background: var(--input);
+        border-radius: 100px;
+        height: 2px;
+        overflow: hidden;
+        margin: 10px 0 5px;
+      }
+      .pbar {
+        height: 100%;
+        background: var(--grad);
+        border-radius: 100px;
+        transition: width 0.5s ease;
+        width: 0%;
+      }
+      .ppct {
+        font-size: 9px;
+        color: var(--t3);
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+      }
+
+      /* ── Log ── */
+      .logbox {
+        background: var(--input);
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        padding: 9px 12px;
+        height: 130px;
+        overflow-y: auto;
+        font-family: "SF Mono", "Fira Code", "Courier New", monospace;
+        font-size: 10.5px;
+        color: var(--t2);
+        scrollbar-width: thin;
+        scrollbar-color: var(--t3) transparent;
+      }
+      .logbox::-webkit-scrollbar {
+        width: 2px;
+      }
+      .logbox::-webkit-scrollbar-thumb {
+        background: var(--t3);
+        border-radius: 2px;
+      }
+      .ll {
+        padding: 1px 0;
+        line-height: 1.7;
+      }
+      .ll.ok {
+        color: var(--green);
+      }
+      .ll.err {
+        color: var(--red);
+      }
+      .ll.inf {
+        color: #6b9cf5;
+      }
+
+      /* ── DB pills ── */
+      .pills {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+      }
+      .pill {
+        background: var(--input);
+        border: 1px solid var(--line);
+        border-radius: 5px;
+        padding: 4px 9px;
+        font-size: 10px;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+      }
+      .pill b {
+        color: var(--t2);
+        font-weight: 500;
+      }
+      .pill em {
+        color: var(--blue);
+        font-style: normal;
+        font-weight: 600;
+      }
+
+      /* ── Filter row ── */
+      .filters {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr auto;
+        gap: 7px;
+        margin-bottom: 10px;
+        align-items: end;
+      }
+      .filters .field {
+        margin: 0;
+      }
+
+      /* ── Export box ── */
+      .export {
+        background: var(--input);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 12px;
+        margin-bottom: 10px;
+      }
+      .export-title {
+        font-size: 9px;
+        font-weight: 600;
+        color: var(--t3);
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        margin-bottom: 7px;
+      }
+      .export-desc {
+        font-size: 10px;
+        color: var(--t2);
+        margin-bottom: 9px;
+        line-height: 1.5;
+      }
+      .export-btns {
+        display: flex;
+        gap: 7px;
+        flex-wrap: wrap;
+      }
+
+      /* ── Table ── */
+      .tbl-wrap {
+        max-height: 340px;
+        overflow-y: auto;
+        border-radius: 7px;
+        border: 1px solid var(--line);
+        scrollbar-width: thin;
+        scrollbar-color: var(--t3) transparent;
+      }
+      .tbl-wrap::-webkit-scrollbar {
+        width: 2px;
+      }
+      .tbl-wrap::-webkit-scrollbar-thumb {
+        background: var(--t3);
+        border-radius: 2px;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      th {
+        background: var(--input);
+        padding: 7px 11px;
+        text-align: left;
+        font-weight: 600;
+        color: var(--t3);
+        font-size: 9px;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        border-bottom: 1px solid var(--line);
+        position: sticky;
+        top: 0;
+        z-index: 1;
+      }
+      td {
+        padding: 7px 11px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.02);
+        color: var(--t2);
+        font-size: 11px;
+      }
+      tr:last-child td {
+        border-bottom: none;
+      }
+      tr:hover td {
+        background: rgba(255, 255, 255, 0.015);
+        color: var(--t1);
+      }
+
+      .tag {
+        display: inline-flex;
+        align-items: center;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 10px;
+        font-weight: 600;
+      }
+      .tag-b {
+        background: rgba(75, 130, 245, 0.1);
+        color: #8ab4fb;
+        border: 1px solid rgba(75, 130, 245, 0.15);
+      }
+      .tag-g {
+        background: rgba(13, 186, 122, 0.08);
+        color: #5de8b8;
+        border: 1px solid rgba(13, 186, 122, 0.15);
+      }
+
+      .empty {
+        text-align: center;
+        color: var(--t3);
+        padding: 22px;
+        font-size: 11px;
+      }
+      .hist-item {
+        padding: 9px 10px;
+        background: var(--input);
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        margin-bottom: 6px;
+        font-size: 10px;
+      }
+      .hist-item:last-child {
+        margin-bottom: 0;
+      }
+      .hist-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 4px;
+      }
+      .hist-country {
+        font-weight: 600;
+        color: var(--t1);
+        font-size: 11px;
+      }
+      .hist-status-ok {
+        color: var(--green);
+      }
+      .hist-status-stop {
+        color: var(--red);
+      }
+      .hist-meta {
+        color: var(--t3);
+        font-size: 9px;
+        line-height: 1.6;
+      }
+    </style>
+  </head>
+  <body>
+    <nav>
+      <div class="nav-dot" id="dot"></div>
+      <div class="nav-logo">PlatesMania Scraper</div>
+      <span class="nav-state" id="navState">Ожидание</span>
+      <span class="nav-conn" id="navConn">Подключение...</span>
+    </nav>
+
+    <main>
+      <!-- ── Левая колонка ── -->
+      <div>
+        <div class="panel">
+          <div class="panel-title">Парсинг</div>
+
+          <div class="field">
+            <label class="field-label">Страна</label>
+            <select id="country">
+              <option value="all">🌍 Все страны (по очереди)</option>
+              <optgroup label="СНГ">
+                <option value="ru">🇷🇺 Россия</option>
+                <option value="ua">🇺🇦 Украина</option>
+                <option value="by">🇧🇾 Беларусь</option>
+                <option value="kz">🇰🇿 Казахстан</option>
+                <option value="uz">🇺🇿 Узбекистан</option>
+                <option value="az">🇦🇿 Азербайджан</option>
+                <option value="am">🇦🇲 Армения</option>
+                <option value="ge">🇬🇪 Грузия</option>
+                <option value="kg">🇰🇬 Кыргызстан</option>
+                <option value="md">🇲🇩 Молдова</option>
+              </optgroup>
+              <optgroup label="Европа">
+                <option value="de">🇩🇪 Германия</option>
+                <option value="pl">🇵🇱 Польша</option>
+                <option value="fr">🇫🇷 Франция</option>
+                <option value="it">🇮🇹 Италия</option>
+                <option value="es">🇪🇸 Испания</option>
+                <option value="gb">🇬🇧 Великобритания</option>
+                <option value="nl">🇳🇱 Нидерланды</option>
+                <option value="be">🇧🇪 Бельгия</option>
+                <option value="at">🇦🇹 Австрия</option>
+                <option value="ch">🇨🇭 Швейцария</option>
+                <option value="se">🇸🇪 Швеция</option>
+                <option value="no">🇳🇴 Норвегия</option>
+                <option value="fi">🇫🇮 Финляндия</option>
+                <option value="dk">🇩🇰 Дания</option>
+                <option value="lt">🇱🇹 Литва</option>
+                <option value="lv">🇱🇻 Латвия</option>
+                <option value="ee">🇪🇪 Эстония</option>
+                <option value="cz">🇨🇿 Чехия</option>
+                <option value="sk">🇸🇰 Словакия</option>
+                <option value="hu">🇭🇺 Венгрия</option>
+                <option value="ro">🇷🇴 Румыния</option>
+                <option value="bg">🇧🇬 Болгария</option>
+                <option value="rs">🇷🇸 Сербия</option>
+                <option value="hr">🇭🇷 Хорватия</option>
+                <option value="gr">🇬🇷 Греция</option>
+                <option value="pt">🇵🇹 Португалия</option>
+              </optgroup>
+              <optgroup label="Ближний Восток / Азия">
+                <option value="tr">🇹🇷 Турция</option>
+                <option value="il">🇮🇱 Израиль</option>
+                <option value="ae">🇦🇪 ОАЭ</option>
+                <option value="cn">🇨🇳 Китай</option>
+                <option value="jp">🇯🇵 Япония</option>
+                <option value="kr">🇰🇷 Корея</option>
+              </optgroup>
+              <optgroup label="Америка">
+                <option value="us">🇺🇸 США</option>
+              </optgroup>
+            </select>
+          </div>
+
+          <div class="field">
+            <label class="field-label">Режим</label>
+            <div class="seg">
+              <button class="seg-btn on" onclick="setMode('auto', this)">
+                🔄 Авто
+              </button>
+              <button class="seg-btn" onclick="setMode('manual', this)">
+                ✏️ Вручную
+              </button>
+            </div>
+          </div>
+
+          <div id="mAuto">
+            <div class="info">
+              Парсер сам определит диапазон ID для выбранной страны и продолжит
+              с места остановки.
+            </div>
+          </div>
+
+          <div id="mManual" style="display: none">
+            <div class="field">
+              <label class="field-label">Начальный ID</label>
+              <input type="number" id="startId" value="31000000" />
+            </div>
+            <div class="field">
+              <label class="field-label">Конечный ID</label>
+              <input type="number" id="endId" value="32000000" />
+            </div>
+          </div>
+
+          <div class="field" style="margin-top: 10px">
+            <label class="field-label">Скорость сбора</label>
+            <div class="speeds">
+              <div class="spd" onclick="setSpd(1, this)">
+                <div class="spd-em">🐢</div>
+                <div class="spd-name">Тихо</div>
+                <div class="spd-sub">1 поток</div>
+              </div>
+              <div class="spd on" onclick="setSpd(3, this)">
+                <div class="spd-em">🚗</div>
+                <div class="spd-name">Средне</div>
+                <div class="spd-sub">3 потока</div>
+              </div>
+              <div class="spd" onclick="setSpd(6, this)">
+                <div class="spd-em">🚀</div>
+                <div class="spd-name">Быстро</div>
+                <div class="spd-sub">6 потоков</div>
+              </div>
+            </div>
+            <div class="spd-hint">
+              ~600 / ~1800 / ~3600 записей в час &nbsp;·&nbsp;
+              <a onclick="toggleCustom()">Своя скорость →</a>
+            </div>
+            <div class="custom-spd" id="customBox" style="display: none">
+              <label class="field-label">Количество потоков</label>
+              <input type="number" id="customW" value="10" min="1" max="30" />
+              <div class="custom-spd-warn">
+                ⚠ На 16 GB RAM — не более 10 потоков. Больше потоков = больше
+                скорости, но и нагрузка на сервер выше.
+              </div>
+            </div>
+          </div>
+
+          <div class="trow" id="freshRow" onclick="toggleFresh()">
+            <input type="checkbox" id="freshCb" />
+            <span class="trow-text">Начать заново (сбросить прогресс)</span>
+          </div>
+
+          <button class="btn btn-run" id="btnRun" onclick="startScrape()">
+            ▶ Запустить
+          </button>
+          <button
+            class="btn btn-stop"
+            id="btnStop"
+            onclick="stopScrape()"
+            disabled
+          >
+            ■ Остановить
+          </button>
+        </div>
+
+        <div class="panel">
+          <div class="panel-title">Собрано данных</div>
+          <div class="pills" id="pills">
+            <span style="color: var(--t3); font-size: 11px">Загрузка...</span>
+          </div>
+        </div>
+
+        <!-- История сессий -->
+        <div class="panel">
+        <div class="panel-title">
+          <span>История</span>
+          <button class="icon-btn" onclick="loadHistory()">Обновить</button>
+        </div>
+        <div id="historyList">
+          <span style="color: var(--t3); font-size: 11px">Загрузка...</span>
+        </div>
+      </div>
+
+      <!-- Опасная зона -->
+      <div class="panel">
+        <div class="panel-title" style="color: var(--red)">⚠ Сброс данных</div>
+        <div
+          style="
+            font-size: 10px;
+            color: var(--t2);
+            margin-bottom: 10px;
+            line-height: 1.6;
+          "
+        >
+          Удаляет все собранные данные, фото, прогресс и профили браузера.
+          Действие необратимо.
+        </div>
+        <button
+          class="btn btn-stop"
+          style="margin-top: 0"
+          onclick="confirmReset()"
+        >
+          🗑 Удалить все данные
+        </button>
+        </div>
+
+      </div>
+
+      <!-- ── Правая колонка ── -->
+      <div>
+        <div class="panel">
+          <div class="panel-title">
+            <span>Прогресс</span>
+            <span
+              id="runMeta"
+              style="font-size: 10px; color: var(--t3); font-weight: 400"
+              >—</span
+            >
+          </div>
+          <div class="stats">
+            <div class="stat">
+              <div class="stat-n" id="sProc">0</div>
+              <div class="stat-l">Обработано</div>
+            </div>
+            <div class="stat">
+              <div class="stat-n" id="sSaved">0</div>
+              <div class="stat-l">Сохранено</div>
+            </div>
+            <div class="stat">
+              <div class="stat-n" id="sId">—</div>
+              <div class="stat-l">Текущий ID</div>
+            </div>
+          </div>
+          <div class="pbar-wrap"><div class="pbar" id="pbar"></div></div>
+          <div class="ppct" id="ppct">0%</div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-title">
+            <span>Лог</span>
+            <button class="icon-btn" onclick="clearLog()">Очистить</button>
+          </div>
+          <div class="logbox" id="logbox"></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-title">
+            <span>Данные</span>
+            <span
+              id="recCnt"
+              style="font-size: 10px; color: var(--t3); font-weight: 400"
+            ></span>
+          </div>
+
+          <div class="filters">
+            <div class="field">
+              <label class="field-label">Страна</label>
+              <select id="fC">
+                <option value="">Все страны</option>
+                <optgroup label="СНГ">
+                  <option value="ru">🇷🇺 Россия</option>
+                  <option value="ua">🇺🇦 Украина</option>
+                  <option value="by">🇧🇾 Беларусь</option>
+                  <option value="kz">🇰🇿 Казахстан</option>
+                  <option value="uz">🇺🇿 Узбекистан</option>
+                  <option value="az">🇦🇿 Азербайджан</option>
+                  <option value="am">🇦🇲 Армения</option>
+                  <option value="ge">🇬🇪 Грузия</option>
+                </optgroup>
+                <optgroup label="Европа">
+                  <option value="de">🇩🇪 Германия</option>
+                  <option value="pl">🇵🇱 Польша</option>
+                  <option value="fr">🇫🇷 Франция</option>
+                  <option value="it">🇮🇹 Италия</option>
+                  <option value="es">🇪🇸 Испания</option>
+                  <option value="gb">🇬🇧 Великобритания</option>
+                  <option value="tr">🇹🇷 Турция</option>
+                </optgroup>
+                <optgroup label="Азия / Америка">
+                  <option value="us">🇺🇸 США</option>
+                  <option value="cn">🇨🇳 Китай</option>
+                  <option value="jp">🇯🇵 Япония</option>
+                </optgroup>
+              </select>
+            </div>
+            <div class="field">
+              <label class="field-label">Регион</label>
+              <input type="text" id="fR" placeholder="Москва..." />
+            </div>
+            <div class="field">
+              <label class="field-label">Марка</label>
+              <input type="text" id="fB" placeholder="Toyota..." />
+            </div>
+            <div class="field">
+              <label class="field-label">&nbsp;</label>
+              <button
+                class="btn btn-run"
+                onclick="loadRecs()"
+                style="margin-top: 0; padding: 8px 14px; width: auto"
+              >
+                Найти
+              </button>
+            </div>
+          </div>
+
+          <div class="export">
+            <div class="export-title">Скачать</div>
+            <div class="export-desc">
+              Применяет фильтры выше. Оставьте поля пустыми — скачает все
+              данные.
+            </div>
+            <div class="export-btns">
+              <button class="icon-btn g" onclick="dl('excel')">⬇ Excel</button>
+              <button class="icon-btn b" onclick="dl('csv')">⬇ CSV</button>
+            </div>
+          </div>
+
+          <div class="tbl-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Номер</th>
+                  <th>Страна</th>
+                  <th>Регион</th>
+                  <th>Марка</th>
+                  <th>Модель</th>
+                  <th>Фото</th>
+                </tr>
+              </thead>
+              <tbody id="tbody">
+                <tr>
+                  <td colspan="7" class="empty">
+                    Выберите фильтры и нажмите «Найти»
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <script>
+      let ws = null,
+        totalIds = 0,
+        spd = 3;
+
+      // ── WebSocket ──────────────────────────────────────────────────────────
+      function connectWS() {
+        ws = new WebSocket(`ws://${location.host}/ws/progress`);
+        ws.onopen = () => {
+          document.getElementById("navConn").textContent = "● Online";
+          document.getElementById("navConn").style.color = "#0dba7a";
+        };
+        ws.onmessage = (e) => {
+          const d = JSON.parse(e.data);
+          if (d.type === "progress") onProg(d);
+          if (d.type === "heartbeat") onBeat(d.state);
+        };
+        ws.onclose = () => {
+          document.getElementById("navConn").textContent = "○ Offline";
+          document.getElementById("navConn").style.color = "#e84057";
+          setTimeout(connectWS, 3000);
+        };
+      }
+
+      function onProg(d) {
+        document.getElementById("sProc").textContent =
+          d.processed.toLocaleString();
+        document.getElementById("sSaved").textContent =
+          d.saved.toLocaleString();
+        document.getElementById("sId").textContent =
+          d.current_id.toLocaleString();
+        if (totalIds > 0) {
+          const p = Math.min(100, Math.round((d.processed / totalIds) * 100));
+          document.getElementById("pbar").style.width = p + "%";
+          document.getElementById("ppct").textContent = p + "%";
+        }
+        addLog(
+          `[W${d.worker_id}] обработано=${d.processed} сохранено=${d.saved} id=${d.current_id}`,
+          "inf",
+        );
+        if (d.is_done) {
+          addLog("✓ Завершено", "ok");
+          setRunning(false);
+          loadStatus();
+        }
+      }
+
+      function onBeat(s) {
+        const dot = document.getElementById("dot");
+        const ns = document.getElementById("navState");
+        const rm = document.getElementById("runMeta");
+        if (s.is_running) {
+          dot.className = "nav-dot live";
+          const c =
+            s.country === "all"
+              ? "ВСЕ СТРАНЫ"
+              : (s.country || "").toUpperCase();
+          ns.textContent = `Работает · ${c}`;
+          ns.style.color = "var(--green)";
+          rm.textContent = `${s.workers} потоков`;
+        } else {
+          dot.className = "nav-dot";
+          ns.textContent = "Ожидание";
+          ns.style.color = "var(--t3)";
+          rm.textContent = "—";
+        }
+      }
+
+      // ── Режим ──────────────────────────────────────────────────────────────
+      function setMode(m, el) {
+        document
+          .querySelectorAll(".seg-btn")
+          .forEach((b) => b.classList.remove("on"));
+        el.classList.add("on");
+        document.getElementById("mAuto").style.display =
+          m === "auto" ? "block" : "none";
+        document.getElementById("mManual").style.display =
+          m === "manual" ? "block" : "none";
+      }
+
+      function setSpd(n, el) {
+        spd = n;
+        document
+          .querySelectorAll(".spd")
+          .forEach((c) => c.classList.remove("on"));
+        el.classList.add("on");
+      }
+
+      function toggleFresh() {
+        const cb = document.getElementById("freshCb");
+        cb.checked = !cb.checked;
+        document.getElementById("freshRow").classList.toggle("on", cb.checked);
+      }
+
+      function toggleCustom() {
+        const b = document.getElementById("customBox");
+        b.style.display = b.style.display === "none" ? "block" : "none";
+      }
+
+      // ── Старт/стоп ─────────────────────────────────────────────────────────
+      async function startScrape() {
+        const country = document.getElementById("country").value;
+        const isAuto = document
+          .querySelector(".seg-btn.on")
+          .textContent.includes("Авто");
+        const fresh = document.getElementById("freshCb").checked;
+        const startId =
+          parseInt(document.getElementById("startId").value) || 31000000;
+        const endId =
+          parseInt(document.getElementById("endId").value) || 32000000;
+
+        // Кастомная скорость или выбранная
+        const customBox = document.getElementById("customBox");
+        const workers =
+          customBox.style.display !== "none"
+            ? parseInt(document.getElementById("customW").value) || spd
+            : spd;
+
+        if (!isAuto) totalIds = endId - startId;
+
+        const r = await fetch("/api/scrape/start", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            country,
+            workers,
+            auto: isAuto,
+            fresh,
+            start_id: startId,
+            end_id: endId,
+          }),
+        });
+        const d = await r.json();
+        if (d.ok) {
+          setRunning(true);
+          const label =
+            country === "all" ? "ВСЕ СТРАНЫ" : country.toUpperCase();
+          addLog(`▶ ${label} · ${workers} потоков · авто=${isAuto}`, "ok");
+        } else addLog(`✗ ${d.error}`, "err");
+      }
+
+      async function stopScrape() {
+        await fetch("/api/scrape/stop", { method: "POST" });
+        addLog("■ Сигнал остановки отправлен", "err");
+        setRunning(false);
+      }
+
+      function setRunning(r) {
+        document.getElementById("btnRun").disabled = r;
+        document.getElementById("btnStop").disabled = !r;
+      }
+
+      // ── Статус БД ───────────────────────────────────────────────────────────
+      async function loadStatus() {
+        const r = await fetch("/api/status");
+        const d = await r.json();
+        const el = document.getElementById("pills");
+        const db = d.database;
+        if (!Object.keys(db).length) {
+          el.innerHTML =
+            '<span style="color:var(--t3);font-size:11px">Нет данных</span>';
+          return;
+        }
+        el.innerHTML = Object.entries(db)
+          .map(
+            ([k, v]) =>
+              `<div class="pill"><b>${k.toUpperCase()}</b><em>${v.toLocaleString()}</em></div>`,
+          )
+          .join("");
+      }
+
+      // ── Данные ──────────────────────────────────────────────────────────────
+      async function loadRecs() {
+        const p = new URLSearchParams({ limit: "50" });
+        const fc = document.getElementById("fC").value;
+        const fr = document.getElementById("fR").value.trim();
+        const fb = document.getElementById("fB").value.trim();
+        if (fc) p.append("country", fc);
+        if (fr) p.append("region", fr);
+        if (fb) p.append("car_brand", fb);
+        const d = await (await fetch(`/api/records?${p}`)).json();
+        const tb = document.getElementById("tbody");
+        document.getElementById("recCnt").textContent = d.records.length
+          ? `${d.records.length} записей`
+          : "";
+        if (!d.records.length) {
+          tb.innerHTML =
+            '<tr><td colspan="7" class="empty">Нет данных по фильтрам</td></tr>';
+          return;
+        }
+        tb.innerHTML = d.records
+          .map(
+            (r) => `
+    <tr>
+      <td style="color:var(--t3);font-size:10px">${r.plate_id}</td>
+      <td><span class="tag tag-b">${r.plate_number}</span></td>
+      <td>${(r.country || "").toUpperCase()}</td>
+      <td>${r.region || "—"}</td>
+      <td>${r.car_brand || "—"}</td>
+      <td>${r.car_model || "—"}</td>
+      <td>${
+        r.local_path
+          ? '<span class="tag tag-g">✓</span>'
+          : `<a href="${r.photo_url}" target="_blank" style="color:var(--blue);font-size:10px">↗</a>`
+      }</td>
+    </tr>`,
+          )
+          .join("");
+      }
+
+      // ── Скачать ─────────────────────────────────────────────────────────────
+      function dl(type) {
+        const p = new URLSearchParams();
+        const fc = document.getElementById("fC").value;
+        const fr = document.getElementById("fR").value.trim();
+        const fb = document.getElementById("fB").value.trim();
+        if (fc) p.append("country", fc);
+        if (fr) p.append("region", fr);
+        if (fb) p.append("car_brand", fb);
+        window.open(`/api/download/${type}?${p}`, "_blank");
+      }
+
+      // ── Лог ─────────────────────────────────────────────────────────────────
+      function addLog(msg, type = "") {
+        const b = document.getElementById("logbox");
+        const d = document.createElement("div");
+        d.className = "ll " + type;
+        d.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+        b.appendChild(d);
+        b.scrollTop = b.scrollHeight;
+        while (b.children.length > 100) b.removeChild(b.firstChild);
+      }
+      function clearLog() {
+        document.getElementById("logbox").innerHTML = "";
+      }
+      // ── История ─────────────────────────────────────────────────────────────
+      async function loadHistory() {
+        const d = await (await fetch("/api/history")).json();
+        const el = document.getElementById("historyList");
+        if (!d.sessions.length) {
+          el.innerHTML =
+            '<span style="color:var(--t3);font-size:11px">Нет истории</span>';
+          return;
+        }
+        el.innerHTML = d.sessions
+          .map((s) => {
+            const start = new Date(s.started_at).toLocaleString("ru");
+            const end = new Date(s.finished_at).toLocaleString("ru");
+            const statusCls =
+              s.status === "завершён" ? "hist-status-ok" : "hist-status-stop";
+            return `<div class="hist-item">
+      <div class="hist-top">
+        <span class="hist-country">${s.country} · ${s.saved.toLocaleString()} записей</span>
+        <span class="${statusCls}">${s.status}</span>
+      </div>
+      <div class="hist-meta">
+        Начало: ${start}<br>
+        Конец: ${end} · ${s.workers} потоков
+      </div>
+    </div>`;
+          })
+          .join("");
+      }
+
+      // ── Сброс ────────────────────────────────────────────────────────────────
+      async function confirmReset() {
+        const ok = confirm(
+          "⚠ ВНИМАНИЕ!\n\nЭто удалит:\n• Все собранные номера из базы\n• Все скачанные фото\n• Весь прогресс парсинга\n• Все профили браузера\n\nДействие необратимо. Продолжить?",
+        );
+        if (!ok) return;
+        const ok2 = confirm("Вы уверены? Это нельзя отменить.");
+        if (!ok2) return;
+
+        const r = await fetch("/api/reset", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ confirm: true }),
+        });
+        const d = await r.json();
+        if (d.ok) {
+          addLog("🗑 Все данные удалены", "err");
+          loadStatus();
+          loadHistory();
+        } else {
+          addLog(`✗ Ошибка сброса: ${d.error}`, "err");
+        }
+      }
+
+      // ── Init ─────────────────────────────────────────────────────────────────
+      connectWS();
+      loadStatus();
+      loadHistory();
+      setInterval(loadStatus, 15000);
+      setInterval(loadHistory, 30000);
+    </script>
+  </body>
+</html>
