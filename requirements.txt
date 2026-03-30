@@ -1,12 +1,27 @@
-curl-cffi==0.7.4
+# Web panel
+fastapi==0.135.1
+uvicorn==0.42.0
+
+# Browser automation
+playwright==1.58.0
+
+# HTML parsing
 beautifulsoup4==4.12.3
 lxml==5.2.2
+
+# Database
 aiosqlite==0.20.0
-tenacity==8.3.0
-rich==13.7.1
-python-dotenv==1.0.1
-httpx==0.27.0
+
+# HTTP client
 requests==2.31.0
+
+# Excel export
 openpyxl==3.1.2
 pillow==10.3.0
-playwright==1.58.0
+
+# Retry logic
+tenacity==8.3.0
+
+# Utilities
+rich==13.7.1
+python-dotenv==1.0.1

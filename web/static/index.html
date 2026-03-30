@@ -7,11 +7,7 @@
     <style>
       @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap");
 
-      * {
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-      }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
 
       :root {
         --bg: #050507;
@@ -30,10 +26,7 @@
       }
 
       body {
-        font-family:
-          "Inter",
-          -apple-system,
-          sans-serif;
+        font-family: "Inter", -apple-system, sans-serif;
         background: var(--bg);
         color: var(--t1);
         min-height: 100vh;
@@ -77,13 +70,8 @@
         animation: blink 2.5s infinite;
       }
       @keyframes blink {
-        0%,
-        100% {
-          opacity: 1;
-        }
-        50% {
-          opacity: 0.4;
-        }
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.4; }
       }
       .nav-state {
         font-size: 11px;
@@ -91,11 +79,7 @@
         font-weight: 500;
         transition: color 0.3s;
       }
-      .nav-conn {
-        margin-left: auto;
-        font-size: 11px;
-        color: var(--t3);
-      }
+      .nav-conn { margin-left: auto; font-size: 11px; color: var(--t3); }
 
       /* ── Layout ── */
       main {
@@ -116,9 +100,7 @@
         padding: 16px;
         margin-bottom: 10px;
       }
-      .panel:last-child {
-        margin-bottom: 0;
-      }
+      .panel:last-child { margin-bottom: 0; }
       .panel-title {
         font-size: 9px;
         font-weight: 600;
@@ -134,12 +116,8 @@
       }
 
       /* ── Fields ── */
-      .field {
-        margin-bottom: 10px;
-      }
-      .field:last-child {
-        margin-bottom: 0;
-      }
+      .field { margin-bottom: 10px; }
+      .field:last-child { margin-bottom: 0; }
       .field-label {
         display: block;
         font-size: 10px;
@@ -148,8 +126,7 @@
         margin-bottom: 5px;
         letter-spacing: 0.01em;
       }
-      input,
-      select {
+      input, select {
         width: 100%;
         background: var(--input);
         border: 1px solid var(--line);
@@ -159,19 +136,14 @@
         font-size: 12px;
         font-family: inherit;
         outline: none;
-        transition:
-          border-color 0.15s,
-          box-shadow 0.15s;
+        transition: border-color 0.15s, box-shadow 0.15s;
         -webkit-appearance: none;
       }
-      input:focus,
-      select:focus {
+      input:focus, select:focus {
         border-color: rgba(75, 130, 245, 0.45);
         box-shadow: 0 0 0 3px rgba(75, 130, 245, 0.07);
       }
-      input::placeholder {
-        color: var(--t3);
-      }
+      input::placeholder { color: var(--t3); }
       select {
         background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='9' height='9' viewBox='0 0 24 24' fill='none' stroke='%232a2f45' stroke-width='2.5'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
         background-repeat: no-repeat;
@@ -179,9 +151,7 @@
         padding-right: 28px;
         cursor: pointer;
       }
-      select option {
-        background: #0f1017;
-      }
+      select option { background: #0f1017; }
 
       /* ── Segment tabs ── */
       .seg {
@@ -213,11 +183,7 @@
       }
 
       /* ── Speed cards ── */
-      .speeds {
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 5px;
-      }
+      .speeds { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
       .spd {
         background: var(--input);
         border: 1px solid var(--line);
@@ -227,27 +193,14 @@
         cursor: pointer;
         transition: all 0.15s;
       }
-      .spd:hover {
-        border-color: var(--line2);
-      }
+      .spd:hover { border-color: var(--line2); }
       .spd.on {
         border-color: rgba(75, 130, 245, 0.5);
         background: rgba(75, 130, 245, 0.07);
       }
-      .spd-em {
-        font-size: 16px;
-        margin-bottom: 3px;
-      }
-      .spd-name {
-        font-size: 10px;
-        font-weight: 600;
-        color: var(--t1);
-      }
-      .spd-sub {
-        font-size: 9px;
-        color: var(--t3);
-        margin-top: 1px;
-      }
+      .spd-em { font-size: 16px; margin-bottom: 3px; }
+      .spd-name { font-size: 10px; font-weight: 600; color: var(--t1); }
+      .spd-sub { font-size: 9px; color: var(--t3); margin-top: 1px; }
 
       /* ── Toggle row ── */
       .trow {
@@ -262,28 +215,21 @@
         user-select: none;
         transition: border-color 0.15s;
       }
-      .trow:hover {
-        border-color: var(--line2);
-      }
+      .trow:hover { border-color: var(--line2); }
       .trow.on {
         border-color: rgba(75, 130, 245, 0.4);
         background: rgba(75, 130, 245, 0.05);
       }
-      .trow.on .trow-text {
-        color: var(--blue);
-      }
-      .trow input[type="checkbox"] {
+      .trow.on .trow-text { color: var(--blue); }
+      .trow-cb {
         width: 13px;
         height: 13px;
         accent-color: var(--blue);
         cursor: pointer;
         flex-shrink: 0;
+        pointer-events: none; /* клики обрабатывает родительский .trow */
       }
-      .trow-text {
-        font-size: 11px;
-        color: var(--t1);
-        font-weight: 400;
-      }
+      .trow-text { font-size: 11px; color: var(--t1); font-weight: 400; }
 
       /* ── Info block ── */
       .info {
@@ -297,20 +243,9 @@
       }
 
       /* ── Speed hint ── */
-      .spd-hint {
-        font-size: 9px;
-        color: var(--t3);
-        line-height: 1.6;
-        margin-top: 2px;
-      }
-      .spd-hint a {
-        color: var(--blue);
-        cursor: pointer;
-        text-decoration: none;
-      }
-      .spd-hint a:hover {
-        text-decoration: underline;
-      }
+      .spd-hint { font-size: 9px; color: var(--t3); line-height: 1.6; margin-top: 2px; }
+      .spd-hint a { color: var(--blue); cursor: pointer; text-decoration: none; }
+      .spd-hint a:hover { text-decoration: underline; }
 
       /* ── Custom workers ── */
       .custom-spd {
@@ -320,12 +255,7 @@
         border: 1px solid var(--line);
         border-radius: 7px;
       }
-      .custom-spd-warn {
-        font-size: 9px;
-        color: var(--t3);
-        margin-top: 5px;
-        line-height: 1.5;
-      }
+      .custom-spd-warn { font-size: 9px; color: var(--t3); margin-top: 5px; line-height: 1.5; }
 
       /* ── Buttons ── */
       .btn {
@@ -354,12 +284,7 @@
         box-shadow: 0 4px 20px rgba(75, 130, 245, 0.35);
         transform: translateY(-1px);
       }
-      .btn-run:disabled {
-        opacity: 0.25;
-        cursor: not-allowed;
-        box-shadow: none;
-        transform: none;
-      }
+      .btn-run:disabled { opacity: 0.25; cursor: not-allowed; box-shadow: none; transform: none; }
       .btn-stop {
         background: transparent;
         color: var(--red);
@@ -370,10 +295,7 @@
         background: rgba(232, 64, 87, 0.05);
         border-color: rgba(232, 64, 87, 0.4);
       }
-      .btn-stop:disabled {
-        opacity: 0.15;
-        cursor: not-allowed;
-      }
+      .btn-stop:disabled { opacity: 0.15; cursor: not-allowed; }
 
       .icon-btn {
         padding: 4px 10px;
@@ -390,34 +312,14 @@
         align-items: center;
         gap: 4px;
       }
-      .icon-btn:hover {
-        color: var(--t1);
-        border-color: var(--blue);
-      }
-      .icon-btn.g {
-        color: var(--green);
-        border-color: rgba(13, 186, 122, 0.2);
-      }
-      .icon-btn.g:hover {
-        background: rgba(13, 186, 122, 0.05);
-        border-color: rgba(13, 186, 122, 0.5);
-      }
-      .icon-btn.b {
-        color: var(--blue);
-        border-color: rgba(75, 130, 245, 0.2);
-      }
-      .icon-btn.b:hover {
-        background: rgba(75, 130, 245, 0.05);
-        border-color: rgba(75, 130, 245, 0.5);
-      }
+      .icon-btn:hover { color: var(--t1); border-color: var(--blue); }
+      .icon-btn.g { color: var(--green); border-color: rgba(13, 186, 122, 0.2); }
+      .icon-btn.g:hover { background: rgba(13, 186, 122, 0.05); border-color: rgba(13, 186, 122, 0.5); }
+      .icon-btn.b { color: var(--blue); border-color: rgba(75, 130, 245, 0.2); }
+      .icon-btn.b:hover { background: rgba(75, 130, 245, 0.05); border-color: rgba(75, 130, 245, 0.5); }
 
       /* ── Stats ── */
-      .stats {
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 7px;
-        margin-bottom: 12px;
-      }
+      .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; margin-bottom: 12px; }
       .stat {
         background: var(--input);
         border: 1px solid var(--line);
@@ -432,36 +334,12 @@
         letter-spacing: -0.04em;
         font-variant-numeric: tabular-nums;
       }
-      .stat-l {
-        font-size: 8px;
-        color: var(--t3);
-        margin-top: 3px;
-        text-transform: uppercase;
-        letter-spacing: 0.1em;
-        font-weight: 600;
-      }
+      .stat-l { font-size: 8px; color: var(--t3); margin-top: 3px; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; }
 
       /* ── Progress bar ── */
-      .pbar-wrap {
-        background: var(--input);
-        border-radius: 100px;
-        height: 2px;
-        overflow: hidden;
-        margin: 10px 0 5px;
-      }
-      .pbar {
-        height: 100%;
-        background: var(--grad);
-        border-radius: 100px;
-        transition: width 0.5s ease;
-        width: 0%;
-      }
-      .ppct {
-        font-size: 9px;
-        color: var(--t3);
-        text-align: right;
-        font-variant-numeric: tabular-nums;
-      }
+      .pbar-wrap { background: var(--input); border-radius: 100px; height: 2px; overflow: hidden; margin: 10px 0 5px; }
+      .pbar { height: 100%; background: var(--grad); border-radius: 100px; transition: width 0.5s ease; width: 0%; }
+      .ppct { font-size: 9px; color: var(--t3); text-align: right; font-variant-numeric: tabular-nums; }
 
       /* ── Log ── */
       .logbox {
@@ -477,33 +355,15 @@
         scrollbar-width: thin;
         scrollbar-color: var(--t3) transparent;
       }
-      .logbox::-webkit-scrollbar {
-        width: 2px;
-      }
-      .logbox::-webkit-scrollbar-thumb {
-        background: var(--t3);
-        border-radius: 2px;
-      }
-      .ll {
-        padding: 1px 0;
-        line-height: 1.7;
-      }
-      .ll.ok {
-        color: var(--green);
-      }
-      .ll.err {
-        color: var(--red);
-      }
-      .ll.inf {
-        color: #6b9cf5;
-      }
+      .logbox::-webkit-scrollbar { width: 2px; }
+      .logbox::-webkit-scrollbar-thumb { background: var(--t3); border-radius: 2px; }
+      .ll { padding: 1px 0; line-height: 1.7; }
+      .ll.ok { color: var(--green); }
+      .ll.err { color: var(--red); }
+      .ll.inf { color: #6b9cf5; }
 
       /* ── DB pills ── */
-      .pills {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 5px;
-      }
+      .pills { display: flex; flex-wrap: wrap; gap: 5px; }
       .pill {
         background: var(--input);
         border: 1px solid var(--line);
@@ -514,15 +374,8 @@
         align-items: center;
         gap: 5px;
       }
-      .pill b {
-        color: var(--t2);
-        font-weight: 500;
-      }
-      .pill em {
-        color: var(--blue);
-        font-style: normal;
-        font-weight: 600;
-      }
+      .pill b { color: var(--t2); font-weight: 500; }
+      .pill em { color: var(--blue); font-style: normal; font-weight: 600; }
 
       /* ── Filter row ── */
       .filters {
@@ -532,9 +385,7 @@
         margin-bottom: 10px;
         align-items: end;
       }
-      .filters .field {
-        margin: 0;
-      }
+      .filters .field { margin: 0; }
 
       /* ── Export box ── */
       .export {
@@ -544,25 +395,9 @@
         padding: 12px;
         margin-bottom: 10px;
       }
-      .export-title {
-        font-size: 9px;
-        font-weight: 600;
-        color: var(--t3);
-        text-transform: uppercase;
-        letter-spacing: 0.1em;
-        margin-bottom: 7px;
-      }
-      .export-desc {
-        font-size: 10px;
-        color: var(--t2);
-        margin-bottom: 9px;
-        line-height: 1.5;
-      }
-      .export-btns {
-        display: flex;
-        gap: 7px;
-        flex-wrap: wrap;
-      }
+      .export-title { font-size: 9px; font-weight: 600; color: var(--t3); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 7px; }
+      .export-desc { font-size: 10px; color: var(--t2); margin-bottom: 9px; line-height: 1.5; }
+      .export-btns { display: flex; gap: 7px; flex-wrap: wrap; }
 
       /* ── Table ── */
       .tbl-wrap {
@@ -573,17 +408,9 @@
         scrollbar-width: thin;
         scrollbar-color: var(--t3) transparent;
       }
-      .tbl-wrap::-webkit-scrollbar {
-        width: 2px;
-      }
-      .tbl-wrap::-webkit-scrollbar-thumb {
-        background: var(--t3);
-        border-radius: 2px;
-      }
-      table {
-        width: 100%;
-        border-collapse: collapse;
-      }
+      .tbl-wrap::-webkit-scrollbar { width: 2px; }
+      .tbl-wrap::-webkit-scrollbar-thumb { background: var(--t3); border-radius: 2px; }
+      table { width: 100%; border-collapse: collapse; }
       th {
         background: var(--input);
         padding: 7px 11px;
@@ -604,39 +431,16 @@
         color: var(--t2);
         font-size: 11px;
       }
-      tr:last-child td {
-        border-bottom: none;
-      }
-      tr:hover td {
-        background: rgba(255, 255, 255, 0.015);
-        color: var(--t1);
-      }
+      tr:last-child td { border-bottom: none; }
+      tr:hover td { background: rgba(255, 255, 255, 0.015); color: var(--t1); }
 
-      .tag {
-        display: inline-flex;
-        align-items: center;
-        padding: 2px 6px;
-        border-radius: 4px;
-        font-size: 10px;
-        font-weight: 600;
-      }
-      .tag-b {
-        background: rgba(75, 130, 245, 0.1);
-        color: #8ab4fb;
-        border: 1px solid rgba(75, 130, 245, 0.15);
-      }
-      .tag-g {
-        background: rgba(13, 186, 122, 0.08);
-        color: #5de8b8;
-        border: 1px solid rgba(13, 186, 122, 0.15);
-      }
+      .tag { display: inline-flex; align-items: center; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 600; }
+      .tag-b { background: rgba(75, 130, 245, 0.1); color: #8ab4fb; border: 1px solid rgba(75, 130, 245, 0.15); }
+      .tag-g { background: rgba(13, 186, 122, 0.08); color: #5de8b8; border: 1px solid rgba(13, 186, 122, 0.15); }
 
-      .empty {
-        text-align: center;
-        color: var(--t3);
-        padding: 22px;
-        font-size: 11px;
-      }
+      .empty { text-align: center; color: var(--t3); padding: 22px; font-size: 11px; }
+
+      /* ── History ── */
       .hist-item {
         padding: 9px 10px;
         background: var(--input);
@@ -645,31 +449,12 @@
         margin-bottom: 6px;
         font-size: 10px;
       }
-      .hist-item:last-child {
-        margin-bottom: 0;
-      }
-      .hist-top {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        margin-bottom: 4px;
-      }
-      .hist-country {
-        font-weight: 600;
-        color: var(--t1);
-        font-size: 11px;
-      }
-      .hist-status-ok {
-        color: var(--green);
-      }
-      .hist-status-stop {
-        color: var(--red);
-      }
-      .hist-meta {
-        color: var(--t3);
-        font-size: 9px;
-        line-height: 1.6;
-      }
+      .hist-item:last-child { margin-bottom: 0; }
+      .hist-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+      .hist-country { font-weight: 600; color: var(--t1); font-size: 11px; }
+      .hist-status-ok { color: var(--green); }
+      .hist-status-stop { color: var(--red); }
+      .hist-meta { color: var(--t3); font-size: 9px; line-height: 1.6; }
     </style>
   </head>
   <body>
@@ -681,8 +466,13 @@
     </nav>
 
     <main>
-      <!-- ── Левая колонка ── -->
+      <!-- ══════════════════════════════════════
+           ЛЕВАЯ КОЛОНКА
+           Все 4 панели — внутри этого <div>
+           ══════════════════════════════════════ -->
       <div>
+
+        <!-- Парсинг -->
         <div class="panel">
           <div class="panel-title">Парсинг</div>
 
@@ -747,19 +537,14 @@
           <div class="field">
             <label class="field-label">Режим</label>
             <div class="seg">
-              <button class="seg-btn on" onclick="setMode('auto', this)">
-                🔄 Авто
-              </button>
-              <button class="seg-btn" onclick="setMode('manual', this)">
-                ✏️ Вручную
-              </button>
+              <button class="seg-btn on" onclick="setMode('auto', this)">🔄 Авто</button>
+              <button class="seg-btn" onclick="setMode('manual', this)">✏️ Вручную</button>
             </div>
           </div>
 
           <div id="mAuto">
             <div class="info">
-              Парсер сам определит диапазон ID для выбранной страны и продолжит
-              с места остановки.
+              Парсер сам определит диапазон ID для выбранной страны и продолжит с места остановки.
             </div>
           </div>
 
@@ -801,30 +586,23 @@
               <label class="field-label">Количество потоков</label>
               <input type="number" id="customW" value="10" min="1" max="30" />
               <div class="custom-spd-warn">
-                ⚠ На 16 GB RAM — не более 10 потоков. Больше потоков = больше
-                скорости, но и нагрузка на сервер выше.
+                ⚠ На 16 GB RAM — не более 10 потоков.
               </div>
             </div>
           </div>
 
+          <!-- pointer-events: none на чекбоксе — клики обрабатывает .trow,
+               исключает двойной инверт при прямом клике на <input> -->
           <div class="trow" id="freshRow" onclick="toggleFresh()">
-            <input type="checkbox" id="freshCb" />
+            <input type="checkbox" id="freshCb" class="trow-cb" />
             <span class="trow-text">Начать заново (сбросить прогресс)</span>
           </div>
 
-          <button class="btn btn-run" id="btnRun" onclick="startScrape()">
-            ▶ Запустить
-          </button>
-          <button
-            class="btn btn-stop"
-            id="btnStop"
-            onclick="stopScrape()"
-            disabled
-          >
-            ■ Остановить
-          </button>
+          <button class="btn btn-run" id="btnRun" onclick="startScrape()">▶ Запустить</button>
+          <button class="btn btn-stop" id="btnStop" onclick="stopScrape()" disabled>■ Остановить</button>
         </div>
 
+        <!-- Собрано данных -->
         <div class="panel">
           <div class="panel-title">Собрано данных</div>
           <div class="pills" id="pills">
@@ -834,50 +612,39 @@
 
         <!-- История сессий -->
         <div class="panel">
-        <div class="panel-title">
-          <span>История</span>
-          <button class="icon-btn" onclick="loadHistory()">Обновить</button>
+          <div class="panel-title">
+            <span>История</span>
+            <button class="icon-btn" onclick="loadHistory()">Обновить</button>
+          </div>
+          <div id="historyList">
+            <span style="color: var(--t3); font-size: 11px">Загрузка...</span>
+          </div>
         </div>
-        <div id="historyList">
-          <span style="color: var(--t3); font-size: 11px">Загрузка...</span>
-        </div>
-      </div>
 
-      <!-- Опасная зона -->
-      <div class="panel">
-        <div class="panel-title" style="color: var(--red)">⚠ Сброс данных</div>
-        <div
-          style="
-            font-size: 10px;
-            color: var(--t2);
-            margin-bottom: 10px;
-            line-height: 1.6;
-          "
-        >
-          Удаляет все собранные данные, фото, прогресс и профили браузера.
-          Действие необратимо.
-        </div>
-        <button
-          class="btn btn-stop"
-          style="margin-top: 0"
-          onclick="confirmReset()"
-        >
-          🗑 Удалить все данные
-        </button>
+        <!-- Опасная зона -->
+        <div class="panel">
+          <div class="panel-title" style="color: var(--red)">⚠ Сброс данных</div>
+          <div style="font-size: 10px; color: var(--t2); margin-bottom: 10px; line-height: 1.6;">
+            Удаляет все собранные данные, фото, прогресс и профили браузера. Действие необратимо.
+          </div>
+          <button class="btn btn-stop" style="margin-top: 0" onclick="confirmReset()">
+            🗑 Удалить все данные
+          </button>
         </div>
 
       </div>
+      <!-- ══ конец левой колонки ══ -->
 
-      <!-- ── Правая колонка ── -->
+      <!-- ══════════════════════════════════════
+           ПРАВАЯ КОЛОНКА
+           ══════════════════════════════════════ -->
       <div>
+
+        <!-- Прогресс -->
         <div class="panel">
           <div class="panel-title">
             <span>Прогресс</span>
-            <span
-              id="runMeta"
-              style="font-size: 10px; color: var(--t3); font-weight: 400"
-              >—</span
-            >
+            <span id="runMeta" style="font-size: 10px; color: var(--t3); font-weight: 400">—</span>
           </div>
           <div class="stats">
             <div class="stat">
@@ -897,6 +664,7 @@
           <div class="ppct" id="ppct">0%</div>
         </div>
 
+        <!-- Лог -->
         <div class="panel">
           <div class="panel-title">
             <span>Лог</span>
@@ -905,13 +673,11 @@
           <div class="logbox" id="logbox"></div>
         </div>
 
+        <!-- Данные -->
         <div class="panel">
           <div class="panel-title">
             <span>Данные</span>
-            <span
-              id="recCnt"
-              style="font-size: 10px; color: var(--t3); font-weight: 400"
-            ></span>
+            <span id="recCnt" style="font-size: 10px; color: var(--t3); font-weight: 400"></span>
           </div>
 
           <div class="filters">
@@ -955,11 +721,8 @@
             </div>
             <div class="field">
               <label class="field-label">&nbsp;</label>
-              <button
-                class="btn btn-run"
-                onclick="loadRecs()"
-                style="margin-top: 0; padding: 8px 14px; width: auto"
-              >
+              <button class="btn btn-run" onclick="loadRecs()"
+                style="margin-top: 0; padding: 8px 14px; width: auto">
                 Найти
               </button>
             </div>
@@ -967,10 +730,7 @@
 
           <div class="export">
             <div class="export-title">Скачать</div>
-            <div class="export-desc">
-              Применяет фильтры выше. Оставьте поля пустыми — скачает все
-              данные.
-            </div>
+            <div class="export-desc">Применяет фильтры выше. Оставьте поля пустыми — скачает все данные.</div>
             <div class="export-btns">
               <button class="icon-btn g" onclick="dl('excel')">⬇ Excel</button>
               <button class="icon-btn b" onclick="dl('csv')">⬇ CSV</button>
@@ -981,120 +741,119 @@
             <table>
               <thead>
                 <tr>
-                  <th>ID</th>
-                  <th>Номер</th>
-                  <th>Страна</th>
-                  <th>Регион</th>
-                  <th>Марка</th>
-                  <th>Модель</th>
-                  <th>Фото</th>
+                  <th>ID</th><th>Номер</th><th>Страна</th>
+                  <th>Регион</th><th>Марка</th><th>Модель</th><th>Фото</th>
                 </tr>
               </thead>
               <tbody id="tbody">
-                <tr>
-                  <td colspan="7" class="empty">
-                    Выберите фильтры и нажмите «Найти»
-                  </td>
-                </tr>
+                <tr><td colspan="7" class="empty">Выберите фильтры и нажмите «Найти»</td></tr>
               </tbody>
             </table>
           </div>
         </div>
+
       </div>
+      <!-- ══ конец правой колонки ══ -->
+
     </main>
 
     <script>
-      let ws = null,
-        totalIds = 0,
-        spd = 3;
+      // ── Константы ────────────────────────────────────────────────────────────
+      const LOG_MAX_LINES   = 100;
+      const WS_RECONNECT_MS = 3000;
+      const STATUS_POLL_MS  = 15_000;
+      const HISTORY_POLL_MS = 30_000;
 
-      // ── WebSocket ──────────────────────────────────────────────────────────
+      // ── Состояние ────────────────────────────────────────────────────────────
+      let ws       = null;
+      let totalIds = 0;   // сбрасывается в начале каждого startScrape
+      let spd      = 3;
+
+      // ── WebSocket ────────────────────────────────────────────────────────────
       function connectWS() {
         ws = new WebSocket(`ws://${location.host}/ws/progress`);
+
         ws.onopen = () => {
           document.getElementById("navConn").textContent = "● Online";
           document.getElementById("navConn").style.color = "#0dba7a";
         };
+
         ws.onmessage = (e) => {
-          const d = JSON.parse(e.data);
-          if (d.type === "progress") onProg(d);
-          if (d.type === "heartbeat") onBeat(d.state);
+          try {
+            const d = JSON.parse(e.data);
+            if (d.type === "progress")  onProg(d);
+            if (d.type === "heartbeat") onBeat(d.state);
+          } catch (err) {
+            console.error("WS parse error:", err);
+          }
         };
+
         ws.onclose = () => {
           document.getElementById("navConn").textContent = "○ Offline";
           document.getElementById("navConn").style.color = "#e84057";
-          setTimeout(connectWS, 3000);
+          setTimeout(connectWS, WS_RECONNECT_MS);
         };
       }
 
       function onProg(d) {
-        document.getElementById("sProc").textContent =
-          d.processed.toLocaleString();
-        document.getElementById("sSaved").textContent =
-          d.saved.toLocaleString();
-        document.getElementById("sId").textContent =
-          d.current_id.toLocaleString();
+        document.getElementById("sProc").textContent = d.processed.toLocaleString();
+        document.getElementById("sSaved").textContent = d.saved.toLocaleString();
+        document.getElementById("sId").textContent   = d.current_id.toLocaleString();
+
         if (totalIds > 0) {
-          const p = Math.min(100, Math.round((d.processed / totalIds) * 100));
-          document.getElementById("pbar").style.width = p + "%";
-          document.getElementById("ppct").textContent = p + "%";
+          const pct = Math.min(100, Math.round((d.processed / totalIds) * 100));
+          document.getElementById("pbar").style.width = pct + "%";
+          document.getElementById("ppct").textContent  = pct + "%";
         }
-        addLog(
-          `[W${d.worker_id}] обработано=${d.processed} сохранено=${d.saved} id=${d.current_id}`,
-          "inf",
-        );
+
+        addLog(`[W${d.worker_id}] обработано=${d.processed} сохранено=${d.saved} id=${d.current_id}`, "inf");
+
         if (d.is_done) {
           addLog("✓ Завершено", "ok");
           setRunning(false);
           loadStatus();
+          loadHistory();
         }
       }
 
       function onBeat(s) {
         const dot = document.getElementById("dot");
-        const ns = document.getElementById("navState");
-        const rm = document.getElementById("runMeta");
+        const ns  = document.getElementById("navState");
+        const rm  = document.getElementById("runMeta");
+
         if (s.is_running) {
-          dot.className = "nav-dot live";
-          const c =
-            s.country === "all"
-              ? "ВСЕ СТРАНЫ"
-              : (s.country || "").toUpperCase();
-          ns.textContent = `Работает · ${c}`;
+          dot.className  = "nav-dot live";
+          const label    = s.country === "all" ? "ВСЕ СТРАНЫ" : (s.country || "").toUpperCase();
+          ns.textContent = `Работает · ${label}`;
           ns.style.color = "var(--green)";
           rm.textContent = `${s.workers} потоков`;
         } else {
-          dot.className = "nav-dot";
+          dot.className  = "nav-dot";
           ns.textContent = "Ожидание";
           ns.style.color = "var(--t3)";
           rm.textContent = "—";
         }
       }
 
-      // ── Режим ──────────────────────────────────────────────────────────────
+      // ── Режим / настройки ────────────────────────────────────────────────────
       function setMode(m, el) {
-        document
-          .querySelectorAll(".seg-btn")
-          .forEach((b) => b.classList.remove("on"));
+        document.querySelectorAll(".seg-btn").forEach(b => b.classList.remove("on"));
         el.classList.add("on");
-        document.getElementById("mAuto").style.display =
-          m === "auto" ? "block" : "none";
-        document.getElementById("mManual").style.display =
-          m === "manual" ? "block" : "none";
+        document.getElementById("mAuto").style.display   = m === "auto"   ? "block" : "none";
+        document.getElementById("mManual").style.display = m === "manual" ? "block" : "none";
       }
 
       function setSpd(n, el) {
         spd = n;
-        document
-          .querySelectorAll(".spd")
-          .forEach((c) => c.classList.remove("on"));
+        document.querySelectorAll(".spd").forEach(c => c.classList.remove("on"));
         el.classList.add("on");
       }
 
       function toggleFresh() {
-        const cb = document.getElementById("freshCb");
+        const cb  = document.getElementById("freshCb");
+        const row = document.getElementById("freshRow");
         cb.checked = !cb.checked;
-        document.getElementById("freshRow").classList.toggle("on", cb.checked);
+        row.classList.toggle("on", cb.checked);
       }
 
       function toggleCustom() {
@@ -1102,192 +861,205 @@
         b.style.display = b.style.display === "none" ? "block" : "none";
       }
 
-      // ── Старт/стоп ─────────────────────────────────────────────────────────
+      // ── Старт ────────────────────────────────────────────────────────────────
       async function startScrape() {
-        const country = document.getElementById("country").value;
-        const isAuto = document
-          .querySelector(".seg-btn.on")
-          .textContent.includes("Авто");
-        const fresh = document.getElementById("freshCb").checked;
-        const startId =
-          parseInt(document.getElementById("startId").value) || 31000000;
-        const endId =
-          parseInt(document.getElementById("endId").value) || 32000000;
+        // Сбрасываем totalIds перед каждым новым запуском
+        totalIds = 0;
+        document.getElementById("pbar").style.width = "0%";
+        document.getElementById("ppct").textContent = "0%";
 
-        // Кастомная скорость или выбранная
+        const country  = document.getElementById("country").value;
+        const isAuto   = document.querySelector(".seg-btn.on").textContent.includes("Авто");
+        const fresh    = document.getElementById("freshCb").checked;
+        const startId  = parseInt(document.getElementById("startId").value) || 31000000;
+        const endId    = parseInt(document.getElementById("endId").value)   || 32000000;
+
         const customBox = document.getElementById("customBox");
-        const workers =
-          customBox.style.display !== "none"
-            ? parseInt(document.getElementById("customW").value) || spd
-            : spd;
+        const workers   = customBox.style.display !== "none"
+          ? (parseInt(document.getElementById("customW").value) || spd)
+          : spd;
 
-        if (!isAuto) totalIds = endId - startId;
+        if (!isAuto) {
+          if (endId <= startId) {
+            addLog("✗ Конечный ID должен быть больше начального", "err");
+            return;
+          }
+          totalIds = endId - startId;
+        }
 
-        const r = await fetch("/api/scrape/start", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            country,
-            workers,
-            auto: isAuto,
-            fresh,
-            start_id: startId,
-            end_id: endId,
-          }),
-        });
-        const d = await r.json();
-        if (d.ok) {
-          setRunning(true);
-          const label =
-            country === "all" ? "ВСЕ СТРАНЫ" : country.toUpperCase();
-          addLog(`▶ ${label} · ${workers} потоков · авто=${isAuto}`, "ok");
-        } else addLog(`✗ ${d.error}`, "err");
+        try {
+          const r = await fetch("/api/scrape/start", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ country, workers, auto: isAuto, fresh, start_id: startId, end_id: endId }),
+          });
+          const d = await r.json();
+          if (d.ok) {
+            setRunning(true);
+            addLog(`▶ ${country === "all" ? "ВСЕ СТРАНЫ" : country.toUpperCase()} · ${workers} потоков · авто=${isAuto}`, "ok");
+          } else {
+            addLog(`✗ ${d.error}`, "err");
+          }
+        } catch (err) {
+          addLog(`✗ Ошибка связи с сервером: ${err.message}`, "err");
+        }
       }
 
+      // ── Стоп ─────────────────────────────────────────────────────────────────
       async function stopScrape() {
-        await fetch("/api/scrape/stop", { method: "POST" });
-        addLog("■ Сигнал остановки отправлен", "err");
-        setRunning(false);
+        try {
+          const r = await fetch("/api/scrape/stop", { method: "POST" });
+          const d = await r.json();
+          if (d.ok) {
+            addLog("■ Сигнал остановки отправлен", "err");
+            setRunning(false);
+          } else {
+            addLog(`✗ Ошибка остановки: ${d.error}`, "err");
+          }
+        } catch (err) {
+          addLog(`✗ Ошибка связи с сервером: ${err.message}`, "err");
+        }
       }
 
       function setRunning(r) {
-        document.getElementById("btnRun").disabled = r;
+        document.getElementById("btnRun").disabled  = r;
         document.getElementById("btnStop").disabled = !r;
       }
 
-      // ── Статус БД ───────────────────────────────────────────────────────────
+      // ── Статус БД ────────────────────────────────────────────────────────────
       async function loadStatus() {
-        const r = await fetch("/api/status");
-        const d = await r.json();
-        const el = document.getElementById("pills");
-        const db = d.database;
-        if (!Object.keys(db).length) {
-          el.innerHTML =
-            '<span style="color:var(--t3);font-size:11px">Нет данных</span>';
-          return;
+        try {
+          const d  = await (await fetch("/api/status")).json();
+          const el = document.getElementById("pills");
+          const db = d.database;
+          if (!Object.keys(db).length) {
+            el.innerHTML = '<span style="color:var(--t3);font-size:11px">Нет данных</span>';
+            return;
+          }
+          el.innerHTML = Object.entries(db)
+            .map(([k, v]) => `<div class="pill"><b>${k.toUpperCase()}</b><em>${v.toLocaleString()}</em></div>`)
+            .join("");
+        } catch (err) {
+          console.warn("loadStatus error:", err);
         }
-        el.innerHTML = Object.entries(db)
-          .map(
-            ([k, v]) =>
-              `<div class="pill"><b>${k.toUpperCase()}</b><em>${v.toLocaleString()}</em></div>`,
-          )
-          .join("");
       }
 
-      // ── Данные ──────────────────────────────────────────────────────────────
+      // ── Записи ───────────────────────────────────────────────────────────────
       async function loadRecs() {
-        const p = new URLSearchParams({ limit: "50" });
+        const p  = new URLSearchParams({ limit: "50" });
         const fc = document.getElementById("fC").value;
         const fr = document.getElementById("fR").value.trim();
         const fb = document.getElementById("fB").value.trim();
-        if (fc) p.append("country", fc);
-        if (fr) p.append("region", fr);
+        if (fc) p.append("country",  fc);
+        if (fr) p.append("region",   fr);
         if (fb) p.append("car_brand", fb);
-        const d = await (await fetch(`/api/records?${p}`)).json();
-        const tb = document.getElementById("tbody");
-        document.getElementById("recCnt").textContent = d.records.length
-          ? `${d.records.length} записей`
-          : "";
-        if (!d.records.length) {
-          tb.innerHTML =
-            '<tr><td colspan="7" class="empty">Нет данных по фильтрам</td></tr>';
-          return;
+
+        try {
+          const d  = await (await fetch(`/api/records?${p}`)).json();
+          const tb = document.getElementById("tbody");
+          document.getElementById("recCnt").textContent = d.records.length ? `${d.records.length} записей` : "";
+
+          if (!d.records.length) {
+            tb.innerHTML = '<tr><td colspan="7" class="empty">Нет данных по фильтрам</td></tr>';
+            return;
+          }
+          tb.innerHTML = d.records.map(r => `
+            <tr>
+              <td style="color:var(--t3);font-size:10px">${r.plate_id}</td>
+              <td><span class="tag tag-b">${r.plate_number}</span></td>
+              <td>${(r.country || "").toUpperCase()}</td>
+              <td>${r.region   || "—"}</td>
+              <td>${r.car_brand || "—"}</td>
+              <td>${r.car_model || "—"}</td>
+              <td>${r.local_path
+                ? '<span class="tag tag-g">✓</span>'
+                : `<a href="${r.photo_url}" target="_blank" style="color:var(--blue);font-size:10px">↗</a>`
+              }</td>
+            </tr>`).join("");
+        } catch (err) {
+          addLog(`✗ Ошибка загрузки данных: ${err.message}`, "err");
         }
-        tb.innerHTML = d.records
-          .map(
-            (r) => `
-    <tr>
-      <td style="color:var(--t3);font-size:10px">${r.plate_id}</td>
-      <td><span class="tag tag-b">${r.plate_number}</span></td>
-      <td>${(r.country || "").toUpperCase()}</td>
-      <td>${r.region || "—"}</td>
-      <td>${r.car_brand || "—"}</td>
-      <td>${r.car_model || "—"}</td>
-      <td>${
-        r.local_path
-          ? '<span class="tag tag-g">✓</span>'
-          : `<a href="${r.photo_url}" target="_blank" style="color:var(--blue);font-size:10px">↗</a>`
-      }</td>
-    </tr>`,
-          )
-          .join("");
       }
 
-      // ── Скачать ─────────────────────────────────────────────────────────────
+      // ── Скачать ──────────────────────────────────────────────────────────────
       function dl(type) {
-        const p = new URLSearchParams();
+        const p  = new URLSearchParams();
         const fc = document.getElementById("fC").value;
         const fr = document.getElementById("fR").value.trim();
         const fb = document.getElementById("fB").value.trim();
-        if (fc) p.append("country", fc);
-        if (fr) p.append("region", fr);
+        if (fc) p.append("country",  fc);
+        if (fr) p.append("region",   fr);
         if (fb) p.append("car_brand", fb);
         window.open(`/api/download/${type}?${p}`, "_blank");
       }
 
-      // ── Лог ─────────────────────────────────────────────────────────────────
+      // ── Лог ──────────────────────────────────────────────────────────────────
       function addLog(msg, type = "") {
         const b = document.getElementById("logbox");
         const d = document.createElement("div");
-        d.className = "ll " + type;
+        d.className  = "ll " + type;
         d.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
         b.appendChild(d);
         b.scrollTop = b.scrollHeight;
-        while (b.children.length > 100) b.removeChild(b.firstChild);
+        while (b.children.length > LOG_MAX_LINES) b.removeChild(b.firstChild);
       }
+
       function clearLog() {
         document.getElementById("logbox").innerHTML = "";
       }
-      // ── История ─────────────────────────────────────────────────────────────
+
+      // ── История ──────────────────────────────────────────────────────────────
       async function loadHistory() {
-        const d = await (await fetch("/api/history")).json();
-        const el = document.getElementById("historyList");
-        if (!d.sessions.length) {
-          el.innerHTML =
-            '<span style="color:var(--t3);font-size:11px">Нет истории</span>';
-          return;
-        }
-        el.innerHTML = d.sessions
-          .map((s) => {
-            const start = new Date(s.started_at).toLocaleString("ru");
-            const end = new Date(s.finished_at).toLocaleString("ru");
-            const statusCls =
-              s.status === "завершён" ? "hist-status-ok" : "hist-status-stop";
+        try {
+          const d  = await (await fetch("/api/history")).json();
+          const el = document.getElementById("historyList");
+          if (!d.sessions.length) {
+            el.innerHTML = '<span style="color:var(--t3);font-size:11px">Нет истории</span>';
+            return;
+          }
+          el.innerHTML = d.sessions.map(s => {
+            const start     = new Date(s.started_at).toLocaleString("ru");
+            const end       = new Date(s.finished_at).toLocaleString("ru");
+            const statusCls = s.status === "завершён" ? "hist-status-ok" : "hist-status-stop";
             return `<div class="hist-item">
-      <div class="hist-top">
-        <span class="hist-country">${s.country} · ${s.saved.toLocaleString()} записей</span>
-        <span class="${statusCls}">${s.status}</span>
-      </div>
-      <div class="hist-meta">
-        Начало: ${start}<br>
-        Конец: ${end} · ${s.workers} потоков
-      </div>
-    </div>`;
-          })
-          .join("");
+              <div class="hist-top">
+                <span class="hist-country">${s.country} · ${s.saved.toLocaleString()} записей</span>
+                <span class="${statusCls}">${s.status}</span>
+              </div>
+              <div class="hist-meta">
+                Начало: ${start}<br>
+                Конец: ${end} · ${s.workers} потоков
+              </div>
+            </div>`;
+          }).join("");
+        } catch (err) {
+          console.warn("loadHistory error:", err);
+        }
       }
 
       // ── Сброс ────────────────────────────────────────────────────────────────
       async function confirmReset() {
-        const ok = confirm(
-          "⚠ ВНИМАНИЕ!\n\nЭто удалит:\n• Все собранные номера из базы\n• Все скачанные фото\n• Весь прогресс парсинга\n• Все профили браузера\n\nДействие необратимо. Продолжить?",
-        );
-        if (!ok) return;
+        const ok1 = confirm("⚠ ВНИМАНИЕ!\n\nЭто удалит:\n• Все собранные номера из базы\n• Все скачанные фото\n• Весь прогресс парсинга\n• Все профили браузера\n\nДействие необратимо. Продолжить?");
+        if (!ok1) return;
         const ok2 = confirm("Вы уверены? Это нельзя отменить.");
         if (!ok2) return;
 
-        const r = await fetch("/api/reset", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ confirm: true }),
-        });
-        const d = await r.json();
-        if (d.ok) {
-          addLog("🗑 Все данные удалены", "err");
-          loadStatus();
-          loadHistory();
-        } else {
-          addLog(`✗ Ошибка сброса: ${d.error}`, "err");
+        try {
+          const r = await fetch("/api/reset", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ confirm: true }),
+          });
+          const d = await r.json();
+          if (d.ok) {
+            addLog("🗑 Все данные удалены", "inf");  // inf (синий) — действие выполнено, не ошибка
+            loadStatus();
+            loadHistory();
+          } else {
+            addLog(`✗ Ошибка сброса: ${d.error}`, "err");
+          }
+        } catch (err) {
+          addLog(`✗ Ошибка связи с сервером: ${err.message}`, "err");
         }
       }
 
@@ -1295,8 +1067,8 @@
       connectWS();
       loadStatus();
       loadHistory();
-      setInterval(loadStatus, 15000);
-      setInterval(loadHistory, 30000);
+      setInterval(loadStatus,  STATUS_POLL_MS);
+      setInterval(loadHistory, HISTORY_POLL_MS);
     </script>
   </body>
 </html>

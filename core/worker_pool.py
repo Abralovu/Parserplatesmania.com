@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from queue import Queue
 from typing import Optional
 
+from config.settings import BASE_URL, SESSION_SIZE, CHECKPOINT_EVERY, stop_event
 from core.anti_bot import BrowserSession
 from core.downloader import download_photo
 from core.profile_manager import ProfileManager
@@ -21,7 +22,6 @@ from core.scraper import parse_plate_page
 from storage.database import sync_save_batch, sync_id_exists, sync_get_count
 from utils.checkpoint import save_checkpoint, load_checkpoint
 from utils.logger import get_logger
-from config.settings import BASE_URL, SESSION_SIZE, CHECKPOINT_EVERY
 
 logger = get_logger(__name__)
 
@@ -63,7 +63,7 @@ class WorkerPool:
         profile_manager: ProfileManager,
         progress_queue: Optional[Queue] = None,
     ):
-        self._manager = profile_manager
+        self._manager        = profile_manager
         self._progress_queue = progress_queue or Queue()
 
     def run(
@@ -79,7 +79,7 @@ class WorkerPool:
         Возвращает итоговую статистику.
         """
         actual_start = load_checkpoint(country, start_id) if resume else start_id
-        tasks = self._split_range(country, actual_start, end_id, workers)
+        tasks        = self._split_range(country, actual_start, end_id, workers)
 
         if not tasks:
             logger.error("No tasks created — check profile availability")
@@ -94,16 +94,13 @@ class WorkerPool:
         stats = {"processed": 0, "saved": 0, "workers": len(tasks)}
 
         with ThreadPoolExecutor(max_workers=len(tasks)) as executor:
-            futures = {
-                executor.submit(self._run_worker, task): task
-                for task in tasks
-            }
+            futures = {executor.submit(self._run_worker, task): task for task in tasks}
             for future in as_completed(futures):
                 task = futures[future]
                 try:
                     result = future.result()
                     stats["processed"] += result["processed"]
-                    stats["saved"] += result["saved"]
+                    stats["saved"]     += result["saved"]
                 except Exception as e:
                     logger.error(f"Worker {task.worker_id} failed: {e}")
 
@@ -122,12 +119,12 @@ class WorkerPool:
         Полностью синхронный — свой sqlite3 connection через threading.local.
         При блокировке профиля — берёт следующий доступный.
         """
-        ids = list(range(task.start_id, task.end_id + 1))
-        processed = 0
-        saved = 0
-        batch = []
-        profile_path = task.profile_path
-        consecutive_blocks = 0
+        ids                 = range(task.start_id, task.end_id + 1)
+        processed           = 0
+        saved               = 0
+        batch               = []
+        profile_path        = task.profile_path
+        consecutive_blocks  = 0
 
         logger.info(
             f"Worker {task.worker_id}: "
@@ -135,8 +132,16 @@ class WorkerPool:
             f"profile={_profile_name(profile_path)}"
         )
 
-        for session_start in range(0, len(ids), SESSION_SIZE):
-            session_ids = ids[session_start: session_start + SESSION_SIZE]
+        for session_start in range(0, task.end_id - task.start_id + 1, SESSION_SIZE):
+            if stop_event.is_set():
+                break
+
+            session_ids = list(
+                range(
+                    task.start_id + session_start,
+                    min(task.start_id + session_start + SESSION_SIZE, task.end_id + 1),
+                )
+            )
 
             result = self._run_session(
                 task=task,
@@ -148,15 +153,15 @@ class WorkerPool:
                 consecutive_blocks=consecutive_blocks,
             )
 
-            processed = result["processed"]
-            saved = result["saved"]
-            batch = result["batch"]
+            processed          = result["processed"]
+            saved              = result["saved"]
+            batch              = result["batch"]
             consecutive_blocks = result["consecutive_blocks"]
-            profile_path = result["profile_path"]
+            profile_path       = result["profile_path"]
 
         # Финальный flush батча
         if batch:
-            count = sync_save_batch(batch)
+            count  = sync_save_batch(batch)
             saved += count
             logger.info(f"Worker {task.worker_id}: final batch saved {count}")
 
@@ -183,32 +188,27 @@ class WorkerPool:
         """
         Одна браузерная сессия для части диапазона.
         При 5 блокировках подряд — меняет профиль.
+        stop_event импортируется на уровне модуля — нет import внутри цикла.
         """
         try:
             with BrowserSession(task.country, profile_path) as session:
                 for pid in session_ids:
-                    # ── Проверка сигнала остановки ──
-                    from config.settings import stop_event
                     if stop_event.is_set():
                         logger.info(f"Worker {task.worker_id}: stop signal received")
                         break
-                    # ───────────────────────────────
+
                     try:
                         if sync_id_exists(pid):
                             processed += 1
                             continue
 
-                        html = session.fetch(
-                            f"{BASE_URL}/{task.country}/nomer{pid}"
-                        )
+                        html = session.fetch(f"{BASE_URL}/{task.country}/nomer{pid}")
 
                         if not html:
                             consecutive_blocks += 1
-                            processed += 1
-
-                            # 5 блокировок подряд → меняем профиль
+                            processed          += 1
                             if consecutive_blocks >= 5:
-                                profile_path = self._handle_profile_block(
+                                profile_path       = self._handle_profile_block(
                                     task.worker_id, profile_path
                                 )
                                 consecutive_blocks = 0
@@ -218,16 +218,14 @@ class WorkerPool:
                         record = parse_plate_page(html, pid, task.country)
 
                         if record:
-                            local = download_photo(
-                                record.photo_url, pid, task.country
-                            )
+                            local          = download_photo(record.photo_url, pid, task.country)
                             record.local_path = local
                             batch.append(record)
 
                         processed += 1
 
                         if processed % CHECKPOINT_EVERY == 0:
-                            count = sync_save_batch(batch)
+                            count  = sync_save_batch(batch)
                             saved += count
                             batch.clear()
                             save_checkpoint(pid, task.country)
@@ -243,22 +241,17 @@ class WorkerPool:
                             )
 
                     except ConnectionError as e:
-                        logger.warning(
-                            f"Worker {task.worker_id}: KillBot id={pid}: {e}"
-                        )
+                        logger.warning(f"Worker {task.worker_id}: KillBot id={pid}: {e}")
                         processed += 1
                         continue
                     except Exception as e:
-                        logger.error(
-                            f"Worker {task.worker_id}: failed id={pid}: {e}"
-                        )
+                        logger.error(f"Worker {task.worker_id}: failed id={pid}: {e}")
                         processed += 1
                         continue
 
         except Exception as e:
             logger.error(
-                f"Worker {task.worker_id}: session crashed: {e} — "
-                f"saving batch"
+                f"Worker {task.worker_id}: session crashed: {e} — saving batch"
             )
             if batch:
                 sync_save_batch(batch)
@@ -266,37 +259,37 @@ class WorkerPool:
             time.sleep(5)
 
         return {
-            "processed": processed,
-            "saved": saved,
-            "batch": batch,
+            "processed":          processed,
+            "saved":              saved,
+            "batch":              batch,
             "consecutive_blocks": consecutive_blocks,
-            "profile_path": profile_path,
+            "profile_path":       profile_path,
         }
 
-    def _handle_profile_block(
-        self, worker_id: int, current_path: str
-    ) -> str:
+    def _handle_profile_block(self, worker_id: int, current_path: str) -> str:
         """
         Обрабатывает блокировку профиля.
-        Помечает как заблокированный, берёт следующий.
-        Если нет доступных — ждёт 5 минут.
+        Пауза 5 минут разбита на короткие интервалы — stop_event проверяется
+        каждую секунду, остановка не блокируется на 5 минут.
         """
-        logger.warning(
-            f"Worker {worker_id}: 5 consecutive blocks — switching profile"
-        )
+        logger.warning(f"Worker {worker_id}: 5 consecutive blocks — switching profile")
         self._manager.mark_blocked(current_path)
         new_path = self._manager.get_next_profile()
 
         if new_path:
-            logger.info(
-                f"Worker {worker_id}: switched to {_profile_name(new_path)}"
-            )
+            logger.info(f"Worker {worker_id}: switched to {_profile_name(new_path)}")
             return new_path
 
-        logger.error(
-            f"Worker {worker_id}: no profiles available — pausing 5min"
-        )
-        time.sleep(300)
+        logger.error(f"Worker {worker_id}: no profiles available — pausing up to 5min")
+
+        # Ждём по 1 секунде вместо одного sleep(300) —
+        # stop_event проверяется на каждой итерации
+        for _ in range(300):
+            if stop_event.is_set():
+                logger.info(f"Worker {worker_id}: stop signal during pause")
+                break
+            time.sleep(1)
+
         return current_path
 
     def _report_progress(self, progress: WorkerProgress) -> None:
@@ -322,13 +315,10 @@ class WorkerPool:
         tasks = []
 
         for i in range(workers):
-            chunk_start = start_id + i * chunk
-            chunk_end = (
-                chunk_start + chunk - 1
-                if i < workers - 1
-                else end_id
-            )
+            chunk_start  = start_id + i * chunk
+            chunk_end    = chunk_start + chunk - 1 if i < workers - 1 else end_id
             profile_path = self._manager.get_next_profile()
+
             if not profile_path:
                 logger.error(f"No profile for worker {i} — stopping split")
                 break

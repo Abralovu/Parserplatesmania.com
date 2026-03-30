@@ -11,13 +11,13 @@ from typing import Optional
 
 from bs4 import BeautifulSoup
 
+from config.settings import BASE_URL, SESSION_SIZE, CHECKPOINT_EVERY, stop_event
 from core.anti_bot import BrowserSession
 from core.downloader import download_photo
-from storage.models import PlateRecord
 from storage.database import sync_save_batch, sync_id_exists, sync_get_count
+from storage.models import PlateRecord
+from utils.checkpoint import load_checkpoint, save_checkpoint
 from utils.logger import get_logger
-from utils.checkpoint import save_checkpoint, load_checkpoint
-from config.settings import BASE_URL, SESSION_SIZE, CHECKPOINT_EVERY
 
 logger = get_logger(__name__)
 
@@ -70,23 +70,28 @@ def parse_plate_page(html: str, plate_id: int, country: str) -> Optional[PlateRe
 def scrape_range(country: str, start_id: int, end_id: int, resume: bool = True) -> None:
     """
     Парсит диапазон ID для указанной страны.
-    Полностью синхронный — без asyncio, без конфликтов event loop.
+    range() без list() — не загружает миллион элементов в память.
     """
     actual_start = load_checkpoint(country, start_id) if resume else start_id
 
-    ids = list(range(actual_start, end_id + 1))
-    total = len(ids)
-    processed = 0
-    batch: list[PlateRecord] = []
+    # range() — ленивый генератор, не list. При 1M ID не выделяем 1M элементов.
+    ids   = range(actual_start, end_id + 1)
+    total = end_id - actual_start + 1
 
-    logger.info(f"Starting: country={country}, ids={actual_start}..{end_id}, total={total}")
-
-    if total == 0:
+    if total <= 0:
         logger.warning(f"Empty range: start={actual_start} > end={end_id}")
         return
 
+    logger.info(f"Starting: country={country}, ids={actual_start}..{end_id}, total={total}")
+
+    processed = 0
+    batch: list[PlateRecord] = []
+
     for session_start in range(0, total, SESSION_SIZE):
-        session_ids = ids[session_start: session_start + SESSION_SIZE]
+        if stop_event.is_set():
+            break
+
+        session_ids = list(ids[session_start: session_start + SESSION_SIZE])
         logger.info(f"Session: {session_ids[0]}..{session_ids[-1]}")
 
         batch, processed = _run_session(
@@ -113,22 +118,24 @@ def _run_session(
     processed: int,
     total: int,
 ) -> tuple[list, int]:
+    """
+    Одна браузерная сессия для части диапазона.
+    stop_event импортируется на уровне модуля — нет import внутри цикла.
+    """
     try:
         with BrowserSession(country) as session:
             for pid in session_ids:
-                # ── Проверка сигнала остановки ──
-                from config.settings import stop_event
                 if stop_event.is_set():
                     logger.info("Stop signal — halting scraper")
                     break
-                # ───────────────────────────────
+
                 try:
                     if sync_id_exists(pid):
                         logger.debug(f"Skip existing id={pid}")
                         processed += 1
                         continue
 
-                    url = f"{BASE_URL}/{country}/nomer{pid}"
+                    url  = f"{BASE_URL}/{country}/nomer{pid}"
                     html = session.fetch(url)
                     if not html:
                         processed += 1
@@ -136,7 +143,7 @@ def _run_session(
 
                     record = parse_plate_page(html, pid, country)
                     if record:
-                        local = download_photo(record.photo_url, pid, country)
+                        local             = download_photo(record.photo_url, pid, country)
                         record.local_path = local
                         batch.append(record)
 
@@ -202,7 +209,9 @@ def _extract_photo_url(soup: BeautifulSoup, plate_id: int) -> Optional[str]:
     return None
 
 
-def _extract_car_info(title_text: str) -> tuple[Optional[str], Optional[str], Optional[str]]:
+def _extract_car_info(
+    title_text: str,
+) -> tuple[Optional[str], Optional[str], Optional[str]]:
     """Парсит марку, модель, регион из title тега."""
     if "," not in title_text:
         return None, None, None

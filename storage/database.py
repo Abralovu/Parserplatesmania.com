@@ -19,7 +19,32 @@ from config.settings import DB_PATH
 
 logger = get_logger(__name__)
 
-# SQL один раз — DRY
+# ─── SQL константы ────────────────────────────────────────────────────────────
+
+# DDL один раз — используется в async и sync init, нет дублирования
+_DDL_CREATE_TABLE = """
+    CREATE TABLE IF NOT EXISTS plates (
+        plate_id     INTEGER PRIMARY KEY,
+        plate_number TEXT NOT NULL,
+        photo_url    TEXT NOT NULL,
+        country      TEXT NOT NULL,
+        region       TEXT,
+        city         TEXT,
+        car_brand    TEXT,
+        car_model    TEXT,
+        description  TEXT,
+        photo_date   TEXT,
+        local_path   TEXT,
+        scraped_at   TEXT NOT NULL
+    )
+"""
+
+_DDL_INDEXES = [
+    "CREATE INDEX IF NOT EXISTS idx_country        ON plates(country)",
+    "CREATE INDEX IF NOT EXISTS idx_country_region ON plates(country, region)",
+    "CREATE INDEX IF NOT EXISTS idx_country_brand  ON plates(country, car_brand)",
+]
+
 _INSERT_SQL = """
     INSERT OR IGNORE INTO plates
     (plate_id, plate_number, photo_url, country, region, city,
@@ -38,70 +63,26 @@ async def init_db() -> None:
     Создаёт таблицу и индексы если их нет.
     Вызывается один раз при старте FastAPI и CLI.
     """
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+    os.makedirs(os.path.dirname(os.path.abspath(DB_PATH)), exist_ok=True)
 
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS plates (
-                plate_id     INTEGER PRIMARY KEY,
-                plate_number TEXT NOT NULL,
-                photo_url    TEXT NOT NULL,
-                country      TEXT NOT NULL,
-                region       TEXT,
-                city         TEXT,
-                car_brand    TEXT,
-                car_model    TEXT,
-                description  TEXT,
-                photo_date   TEXT,
-                local_path   TEXT,
-                scraped_at   TEXT NOT NULL
-            )
-        """)
-        await db.execute(
-            "CREATE INDEX IF NOT EXISTS idx_country ON plates(country)"
-        )
-        await db.execute(
-            "CREATE INDEX IF NOT EXISTS idx_country_region ON plates(country, region)"
-        )
-        await db.execute(
-            "CREATE INDEX IF NOT EXISTS idx_country_brand ON plates(country, car_brand)"
-        )
+        await db.execute(_DDL_CREATE_TABLE)
+        for idx_sql in _DDL_INDEXES:
+            await db.execute(idx_sql)
         await db.commit()
+
     logger.info(f"Database ready: {DB_PATH}")
 
 
 def sync_init_db() -> None:
     """
     Синхронная инициализация БД — для парсера.
-    Гарантирует что таблица существует до первой записи.
+    Использует те же DDL константы что и async версия — нет дублирования.
     """
-    os.makedirs(os.path.dirname(os.path.abspath(DB_PATH)), exist_ok=True)
     conn = _get_sync_conn()
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS plates (
-            plate_id     INTEGER PRIMARY KEY,
-            plate_number TEXT NOT NULL,
-            photo_url    TEXT NOT NULL,
-            country      TEXT NOT NULL,
-            region       TEXT,
-            city         TEXT,
-            car_brand    TEXT,
-            car_model    TEXT,
-            description  TEXT,
-            photo_date   TEXT,
-            local_path   TEXT,
-            scraped_at   TEXT NOT NULL
-        )
-    """)
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_country ON plates(country)"
-    )
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_country_region ON plates(country, region)"
-    )
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_country_brand ON plates(country, car_brand)"
-    )
+    conn.execute(_DDL_CREATE_TABLE)
+    for idx_sql in _DDL_INDEXES:
+        conn.execute(idx_sql)
     conn.commit()
     logger.info(f"Database ready (sync): {DB_PATH}")
 
@@ -109,20 +90,21 @@ def sync_init_db() -> None:
 # ─── Async (FastAPI) ──────────────────────────────────────────────────────────
 
 async def save_batch(records: List[PlateRecord]) -> int:
+    """
+    Сохраняет батч записей.
+    Использует cursor.rowcount вместо SELECT COUNT — на один запрос меньше.
+    """
     if not records:
         return 0
+
     tuples = [_record_to_tuple(r) for r in records]
+
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.executemany(_INSERT_SQL, tuples)
+        cursor = await db.executemany(_INSERT_SQL, tuples)
         await db.commit()
-        ids = [r.plate_id for r in records]
-        placeholders = ",".join("?" * len(ids))
-        cursor = await db.execute(
-            f"SELECT COUNT(*) FROM plates WHERE plate_id IN ({placeholders})",
-            ids,
-        )
-        row = await cursor.fetchone()
-        saved = row[0] if row else 0
+        # rowcount после INSERT OR IGNORE — количество реально вставленных строк
+        saved = cursor.rowcount
+
     logger.debug(f"Batch saved: {saved}/{len(records)} records")
     return saved
 
@@ -147,6 +129,21 @@ async def get_count(country: Optional[str] = None) -> int:
         return row[0] if row else 0
 
 
+async def get_counts_by_country() -> dict[str, int]:
+    """
+    Один GROUP BY запрос вместо N+1 отдельных SELECT COUNT.
+    Используется в /api/status вместо цикла по всем странам.
+    """
+    if not os.path.exists(DB_PATH):
+        return {}
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "SELECT country, COUNT(*) FROM plates GROUP BY country"
+        )
+        rows = await cursor.fetchall()
+    return {row[0]: row[1] for row in rows}
+
+
 async def get_records(
     country: Optional[str] = None,
     region: Optional[str] = None,
@@ -154,7 +151,7 @@ async def get_records(
     limit: Optional[int] = None,
     offset: int = 0,
 ) -> List[PlateRecord]:
-    conditions = []
+    conditions: list[str] = []
     params: list = []
 
     if country:
@@ -167,7 +164,7 @@ async def get_records(
         conditions.append("car_brand=?")
         params.append(car_brand)
 
-    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    where        = f"WHERE {' AND '.join(conditions)}" if conditions else ""
     limit_clause = "LIMIT ? OFFSET ?" if limit else ""
     if limit:
         params.extend([limit, offset])
@@ -177,7 +174,7 @@ async def get_records(
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(sql, params)
-        rows = await cursor.fetchall()
+        rows   = await cursor.fetchall()
 
     return [_row_to_record(row) for row in rows]
 
@@ -196,33 +193,29 @@ def _get_sync_conn() -> sqlite3.Connection:
 
 
 def sync_save_batch(records: list) -> int:
-    """Синхронная запись батча — для парсера."""
+    """
+    Синхронная запись батча — для парсера.
+    rowcount после executemany — количество реально вставленных строк.
+    """
     if not records:
         return 0
 
-    conn = _get_sync_conn()
+    conn   = _get_sync_conn()
     tuples = [_record_to_tuple(r) for r in records]
 
     try:
-        conn.executemany(_INSERT_SQL, tuples)
+        cursor = conn.execute("BEGIN")  # явная транзакция
+        cursor = conn.executemany(_INSERT_SQL, tuples)
         conn.commit()
+        return cursor.rowcount
     except sqlite3.Error as e:
         logger.error(f"sync_save_batch error: {e}")
         conn.rollback()
         return 0
 
-    ids = [r.plate_id for r in records]
-    placeholders = ",".join("?" * len(ids))
-    cursor = conn.execute(
-        f"SELECT COUNT(*) FROM plates WHERE plate_id IN ({placeholders})", ids
-    )
-    row = cursor.fetchone()
-    return row[0] if row else 0
-
 
 def sync_id_exists(plate_id: int) -> bool:
-    """Синхронная проверка ID — для парсера."""
-    conn = _get_sync_conn()
+    conn   = _get_sync_conn()
     cursor = conn.execute(
         "SELECT 1 FROM plates WHERE plate_id=? LIMIT 1", (plate_id,)
     )
@@ -230,7 +223,6 @@ def sync_id_exists(plate_id: int) -> bool:
 
 
 def sync_get_count(country: Optional[str] = None) -> int:
-    """Синхронный подсчёт — для CLI и парсера."""
     conn = _get_sync_conn()
     if country:
         cursor = conn.execute(
@@ -245,17 +237,15 @@ def sync_get_count(country: Optional[str] = None) -> int:
 # ─── Утилиты ──────────────────────────────────────────────────────────────────
 
 def _record_to_tuple(record: PlateRecord) -> tuple:
-    """Конвертирует PlateRecord в tuple для SQL."""
     return (
-        record.plate_id, record.plate_number, record.photo_url,
-        record.country, record.region, record.city,
-        record.car_brand, record.car_model, record.description,
-        record.photo_date, record.local_path, record.scraped_at,
+        record.plate_id,    record.plate_number, record.photo_url,
+        record.country,     record.region,       record.city,
+        record.car_brand,   record.car_model,    record.description,
+        record.photo_date,  record.local_path,   record.scraped_at,
     )
 
 
 def _row_to_record(row: aiosqlite.Row) -> PlateRecord:
-    """Конвертирует строку БД в PlateRecord."""
     return PlateRecord(
         plate_id=row["plate_id"],
         plate_number=row["plate_number"],
