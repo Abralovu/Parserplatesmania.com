@@ -18,7 +18,7 @@ PROFILE_TTL_HOURS = 12
 
 @dataclass
 class ProfileInfo:
-    """Метаданные одного Chrome профиля."""
+    """Метаданные одного профиля браузера."""
     profile_id: str
     path: str
     is_warmed: bool = False
@@ -29,7 +29,7 @@ class ProfileInfo:
 
 class ProfileManager:
     """
-    Управляет пулом Chrome профилей.
+    Управляет пулом браузерных профилей.
 
     При первом запуске создаёт N профилей и прогревает их.
     При повторном — проверяет TTL и перегревает если нужно.
@@ -79,7 +79,6 @@ class ProfileManager:
         import shutil
         for profile in self._profiles:
             if profile.is_blocked:
-                # Удаляем старую папку и создаём новую чистую
                 try:
                     if os.path.exists(profile.path):
                         shutil.rmtree(profile.path)
@@ -154,13 +153,12 @@ class ProfileManager:
             logger.info(f"Created profile: {profile_id}")
         self._save_meta()
 
-
-
     def _warmup_profile(self, profile: ProfileInfo, country: str) -> None:
         """
         Прогревает профиль через Camoufox.
         Посещает нейтральные сайты + галерею platesmania.
         """
+        import asyncio
         from camoufox.sync_api import Camoufox
         from config.settings import (
             CAMOUFOX_HUMANIZE,
@@ -176,7 +174,7 @@ class ProfileManager:
 
         logger.info(f"Warming up {profile.profile_id} with Camoufox...")
 
-        # Прокси для этого профиля
+        # Привязка прокси к профилю по индексу
         pool = build_proxy_pool(PROXY_LIST)
         profile_index = int(profile.profile_id.split("_")[-1])
         proxy_dict = pool.get_by_index(profile_index) if pool else None
@@ -198,10 +196,12 @@ class ProfileManager:
         cfox = None
         browser = None
         try:
+            # Сбрасываем event loop — иначе Sync API конфликтует с uvicorn
+            asyncio.set_event_loop(None)
+
             cfox = Camoufox(**launch_kwargs)
             browser = cfox.start()
 
-            # Берём первую страницу (persistent context)
             pages = browser.pages if hasattr(browser, "pages") else []
             page = pages[0] if pages else browser.new_page()
 

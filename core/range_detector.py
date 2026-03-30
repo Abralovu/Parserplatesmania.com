@@ -9,7 +9,6 @@ from config.settings import BASE_URL
 
 logger = get_logger(__name__)
 
-# Минимальный известный старт для каждой страны
 _COUNTRY_START_IDS: dict[str, int] = {
     "ru": 1,
     "de": 1,
@@ -19,18 +18,12 @@ _COUNTRY_START_IDS: dict[str, int] = {
     "kz": 1,
 }
 
-# Паттерны для поиска ID в URL номера
 _PLATE_URL_PATTERN = re.compile(r"/nomer(\d+)")
 
 
 def detect_range(country: str, profile_path: Optional[str] = None) -> tuple[int, int]:
     """
     Определяет диапазон ID для страны автоматически.
-
-    Возвращает (start_id, end_id).
-    start_id — минимальный известный для страны.
-    end_id   — максимальный найденный на последней странице галереи.
-
     При ошибке возвращает безопасный дефолт (1, 100_000).
     """
     start_id = _COUNTRY_START_IDS.get(country, 1)
@@ -47,19 +40,15 @@ def detect_range(country: str, profile_path: Optional[str] = None) -> tuple[int,
 def _fetch_max_id(country: str, profile_path: Optional[str]) -> Optional[int]:
     """
     Открывает галерею страны и ищет максимальный ID.
-    Сначала находим последнюю страницу пагинации,
-    потом читаем ID с неё.
     """
     try:
-        with BrowserSession(country=country, chrome_profile=profile_path) as session:
-            # Шаг 1 — читаем первую страницу галереи
+        with BrowserSession(country=country, profile_path=profile_path) as session:
             gallery_url = f"{BASE_URL}/{country}/gallery"
             html = session.fetch(gallery_url)
             if not html:
                 logger.error(f"Cannot fetch gallery for {country}")
                 return None
 
-            # Шаг 2 — находим последнюю страницу пагинации
             last_page = _parse_last_page(html)
             if last_page and last_page > 1:
                 last_url = f"{gallery_url}?page={last_page}"
@@ -67,7 +56,6 @@ def _fetch_max_id(country: str, profile_path: Optional[str]) -> Optional[int]:
                 if not html:
                     logger.warning("Cannot fetch last page — using first page IDs")
 
-            # Шаг 3 — ищем максимальный ID на странице
             return _parse_max_id(html, country)
 
     except Exception as e:
@@ -76,14 +64,10 @@ def _fetch_max_id(country: str, profile_path: Optional[str]) -> Optional[int]:
 
 
 def _parse_last_page(html: str) -> Optional[int]:
-    """
-    Ищет номер последней страницы в пагинации.
-    Формат: <a href="/ru/gallery?page=1234">последняя</a>
-    """
+    """Ищет номер последней страницы в пагинации."""
     soup = BeautifulSoup(html, "lxml")
     page_numbers = []
 
-    # Ищем все ссылки с page= в href
     for a in soup.find_all("a", href=True):
         match = re.search(r"[?&]page=(\d+)", a["href"])
         if match:
@@ -98,10 +82,7 @@ def _parse_last_page(html: str) -> Optional[int]:
 
 
 def _parse_max_id(html: str, country: str) -> Optional[int]:
-    """
-    Ищет максимальный ID номера на странице галереи.
-    Ссылки вида: /ru/nomer31393852
-    """
+    """Ищет максимальный ID номера на странице галереи."""
     if not html:
         return None
 

@@ -66,6 +66,9 @@ class BrowserSession:
         self._camoufox_instance = None
 
     def __enter__(self) -> "BrowserSession":
+        import asyncio
+        asyncio.set_event_loop(None)
+
         from camoufox.sync_api import Camoufox
 
         # Получаем прокси из пула
