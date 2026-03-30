@@ -15,6 +15,7 @@ from datetime import datetime
 from queue import Empty, Queue
 from typing import Optional
 
+
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse
@@ -152,18 +153,20 @@ async def start_scrape(body: ScrapeStartRequest) -> dict:
     # stop_event сбрасываем ДО запуска потока — нет окна гонки
     stop_event.clear()
 
-    loop = asyncio.get_running_loop()
-    loop.run_in_executor(
-        None,
-        _run_scraper_sync,
-        body.country,
-        body.workers,
-        body.fresh,
-        body.auto,
-        body.start_id,
-        body.end_id,
-    )
 
+    t = threading.Thread(
+        target=_run_scraper_sync,
+        args=(
+            body.country,
+            body.workers,
+            body.fresh,
+            body.auto,
+            body.start_id,
+            body.end_id,
+        ),
+        daemon=True,
+    )
+    t.start()
     label = "ВСЕ СТРАНЫ" if body.country == "all" else body.country.upper()
     return {"ok": True, "message": f"Запущен: {label}"}
 
