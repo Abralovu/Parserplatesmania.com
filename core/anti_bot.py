@@ -44,10 +44,12 @@ class BrowserSession:
         self._page = None
 
     def __enter__(self) -> "BrowserSession":
+        import asyncio
+        asyncio.set_event_loop(None)
         self._pw = sync_playwright().start()
         self._context = self._pw.chromium.launch_persistent_context(
             user_data_dir=self._profile,
-            headless=False,
+            headless=HEADLESS,
             args=["--disable-blink-features=AutomationControlled"],
             channel="chrome",
             proxy={"server": PROXY_URL} if PROXY_URL else None,

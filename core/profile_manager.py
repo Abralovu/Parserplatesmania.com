@@ -1,11 +1,3 @@
-#!/usr/bin/env python3
-"""
-ProfileManager — автоматическое создание и прогрев Chrome профилей.
-Профили хранятся в data/profiles/ — не трогает системный Chrome.
-Клиент не делает ничего вручную — всё создаётся при первом запуске.
-Автор: viramax
-"""
-
 import json
 import os
 from dataclasses import dataclass, asdict
@@ -14,7 +6,7 @@ from typing import Optional
 
 from playwright.sync_api import sync_playwright
 
-from config.settings import BASE_URL, OUTPUT_DIR
+from config.settings import BASE_URL, OUTPUT_DIR, HEADLESS
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -176,7 +168,7 @@ class ProfileManager:
             pw = sync_playwright().start()
             context = pw.chromium.launch_persistent_context(
                 user_data_dir=profile.path,
-                headless=False,
+                headless=HEADLESS,
                 args=["--disable-blink-features=AutomationControlled"],
                 channel="chrome",
             )
