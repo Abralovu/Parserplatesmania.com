@@ -1,10 +1,9 @@
 import json
 import os
+import random
 from dataclasses import dataclass, asdict
 from datetime import datetime
 from typing import Optional
-
-from playwright.sync_api import sync_playwright
 
 from config.settings import BASE_URL, OUTPUT_DIR, HEADLESS
 from utils.logger import get_logger
@@ -155,42 +154,106 @@ class ProfileManager:
             logger.info(f"Created profile: {profile_id}")
         self._save_meta()
 
+
+
     def _warmup_profile(self, profile: ProfileInfo, country: str) -> None:
         """
-        Прогревает профиль — посещает WARMUP_PAGES страниц галереи.
-        KillBot видит реальную историю браузера.
+        Прогревает профиль через Camoufox.
+        Посещает нейтральные сайты + галерею platesmania.
         """
-        logger.info(f"Warming up {profile.profile_id}...")
-        pw = None
-        context = None
+        from camoufox.sync_api import Camoufox
+        from config.settings import (
+            CAMOUFOX_HUMANIZE,
+            CAMOUFOX_OS,
+            HEADLESS,
+            PROXY_LIST,
+            stop_event,
+        )
+        from core.proxy_pool import build_proxy_pool
 
+        if stop_event.is_set():
+            return
+
+        logger.info(f"Warming up {profile.profile_id} with Camoufox...")
+
+        # Прокси для этого профиля
+        pool = build_proxy_pool(PROXY_LIST)
+        profile_index = int(profile.profile_id.split("_")[-1])
+        proxy_dict = pool.get_by_index(profile_index) if pool else None
+
+        headless_mode = "virtual" if HEADLESS else False
+
+        launch_kwargs = {
+            "headless": headless_mode,
+            "os": CAMOUFOX_OS,
+            "humanize": CAMOUFOX_HUMANIZE,
+            "geoip": True,
+            "block_webrtc": True,
+            "persistent_context": True,
+            "user_data_dir": profile.path,
+        }
+        if proxy_dict:
+            launch_kwargs["proxy"] = proxy_dict
+
+        cfox = None
+        browser = None
         try:
-            pw = sync_playwright().start()
-            context = pw.chromium.launch_persistent_context(
-                user_data_dir=profile.path,
-                headless=HEADLESS,
-                args=["--disable-blink-features=AutomationControlled"],
-                channel="chrome",
-            )
-            page = context.new_page()
+            cfox = Camoufox(**launch_kwargs)
+            browser = cfox.start()
 
+            # Берём первую страницу (persistent context)
+            pages = browser.pages if hasattr(browser, "pages") else []
+            page = pages[0] if pages else browser.new_page()
+
+            # Посещаем нейтральный сайт
+            try:
+                page.goto(
+                    "https://www.google.com",
+                    wait_until="domcontentloaded",
+                    timeout=15_000,
+                )
+                page.wait_for_timeout(2000)
+                page.evaluate("window.scrollBy(0, 300)")
+                page.wait_for_timeout(1000)
+            except Exception as e:
+                logger.debug(f"Neutral warmup failed: {e}")
+
+            # Посещаем галерею
             gallery_url = f"{BASE_URL}/{country}/gallery"
-            page.goto(gallery_url, wait_until="domcontentloaded", timeout=20000)
+            page.goto(
+                gallery_url, wait_until="domcontentloaded", timeout=25_000
+            )
 
+            # Ждём KillBot
             try:
                 page.wait_for_function(
-                    "() => !document.title.includes('верификац') && "
-                    "!document.title.includes('verification')",
-                    timeout=15000,
+                    """() => {
+                        const t = document.title.toLowerCase();
+                        return !t.includes('верификац')
+                            && !t.includes('verification')
+                            && !t.includes('killbot');
+                    }""",
+                    timeout=30_000,
                 )
+                logger.info(f"{profile.profile_id}: KillBot passed")
             except Exception:
-                logger.warning(f"{profile.profile_id}: KillBot timeout during warmup")
+                logger.warning(
+                    f"{profile.profile_id}: KillBot timeout during warmup"
+                )
 
+            # Листаем галерею
             for page_num in range(2, WARMUP_PAGES + 1):
+                if stop_event.is_set():
+                    break
                 try:
                     url = f"{gallery_url}?page={page_num}"
-                    page.goto(url, wait_until="domcontentloaded", timeout=15000)
-                    page.wait_for_timeout(1500 + (page_num * 200))
+                    page.goto(
+                        url, wait_until="domcontentloaded", timeout=15_000
+                    )
+                    page.evaluate(
+                        f"window.scrollBy(0, {random.randint(200, 500)})"
+                    )
+                    page.wait_for_timeout(1500 + (page_num * 300))
                 except Exception as e:
                     logger.warning(f"Warmup page {page_num} failed: {e}")
 
@@ -202,16 +265,16 @@ class ProfileManager:
         except Exception as e:
             logger.error(f"{profile.profile_id}: warmup failed: {e}")
         finally:
-            if context:
-                try:
-                    context.close()
-                except Exception:
-                    pass
-            if pw:
-                try:
-                    pw.stop()
-                except Exception:
-                    pass
+            try:
+                if browser:
+                    browser.close()
+            except Exception:
+                pass
+            try:
+                if cfox:
+                    cfox.stop()
+            except Exception:
+                pass
 
     def _needs_warmup(self, profile: ProfileInfo) -> bool:
         """Профиль нужно греть если никогда не грели или TTL истёк."""

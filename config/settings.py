@@ -1,5 +1,7 @@
 import os
+import platform
 import threading
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -8,29 +10,21 @@ load_dotenv()
 DELAY_MIN = float(os.getenv("DELAY_MIN", "1.5"))
 DELAY_MAX = float(os.getenv("DELAY_MAX", "4.0"))
 
-# Валидация — если DELAY_MIN > DELAY_MAX, random.uniform сломается
 if DELAY_MIN > DELAY_MAX:
     raise ValueError(
         f"DELAY_MIN ({DELAY_MIN}) не может быть больше DELAY_MAX ({DELAY_MAX})"
     )
 
 # ─── Браузер и сессии ─────────────────────────────────────────────────────────
-
-# Сколько страниц парсим в одной браузерной сессии
-# После SESSION_SIZE браузер перезапускается — защита от утечек памяти
 SESSION_SIZE = int(os.getenv("SESSION_SIZE", "500"))
-
-# Как часто сохраняем checkpoint (каждые N записей)
 CHECKPOINT_EVERY = int(os.getenv("CHECKPOINT_EVERY", "100"))
 
-# Chrome профиль — клиент меняет под себя в .env
+# Chrome профиль — используется в scraper/worker_pool (обратная совместимость)
 CHROME_PROFILE = os.getenv(
     "CHROME_PROFILE",
     os.path.expanduser("~/Library/Application Support/Google/Chrome/Profile 3"),
 )
 
-# Список профилей для многопоточности (v2.0)
-# Пример в .env: CHROME_PROFILES=Profile 1,Profile 2,Profile 3
 _raw_profiles = os.getenv("CHROME_PROFILES", "")
 CHROME_PROFILES: list[str] = (
     [p.strip() for p in _raw_profiles.split(",") if p.strip()]
@@ -38,8 +32,15 @@ CHROME_PROFILES: list[str] = (
     else [CHROME_PROFILE]
 )
 
-# Прокси — опционально
+# ─── Прокси ───────────────────────────────────────────────────────────────────
 PROXY_URL = os.getenv("PROXY_URL", None)
+
+_raw_proxy_list = os.getenv("PROXY_LIST", "")
+PROXY_LIST: list[str] = (
+    [p.strip() for p in _raw_proxy_list.split(",") if p.strip()]
+    if _raw_proxy_list
+    else ([PROXY_URL] if PROXY_URL else [])
+)
 
 # ─── Пути ─────────────────────────────────────────────────────────────────────
 OUTPUT_DIR = os.getenv("OUTPUT_DIR", "./data")
@@ -57,8 +58,13 @@ RETRY_WAIT_MAX = int(os.getenv("RETRY_WAIT_MAX", "30"))
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", None)
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", None)
 
-# True на VPS (нет GUI), False локально для отладки
+# ─── Режим запуска ────────────────────────────────────────────────────────────
 HEADLESS = os.getenv("HEADLESS", "false").lower() == "true"
 
-# Глобальный флаг остановки — проверяется в воркерах
+# ─── Camoufox ─────────────────────────────────────────────────────────────────
+_default_cfox_os = "macos" if platform.system() == "Darwin" else "linux"
+CAMOUFOX_OS = os.getenv("CAMOUFOX_OS", _default_cfox_os)
+CAMOUFOX_HUMANIZE = os.getenv("CAMOUFOX_HUMANIZE", "true").lower() == "true"
+
+# ─── Глобальный флаг остановки ────────────────────────────────────────────────
 stop_event = threading.Event()
