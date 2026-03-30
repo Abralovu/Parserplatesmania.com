@@ -1,19 +1,29 @@
+#!/usr/bin/env python3
+"""
+BrowserSession — управляет одной сессией Playwright.
+Обходит KillBot через реальный Chrome профиль.
+Автор: viramax
+"""
+
 import random
 import time
 from typing import Optional
 
-from playwright.sync_api import sync_playwright, BrowserContext
+from playwright.sync_api import BrowserContext, sync_playwright
 
-from utils.logger import get_logger
 from config.settings import (
-    DELAY_MIN, DELAY_MAX,
-    PROXY_URL, CHROME_PROFILE,
-    BASE_URL, HEADLESS,
+    BASE_URL,
+    CHROME_PROFILE,
+    DELAY_MAX,
+    DELAY_MIN,
+    HEADLESS,
+    PROXY_URL,
+    stop_event,
 )
+from utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-# Маркеры блокировки — проверяем в html после каждого запроса
 _BLOCK_MARKERS = [
     "killbot user verification",
     "проверка пользователя",
@@ -26,27 +36,25 @@ _BLOCK_MARKERS = [
 class BrowserSession:
     """
     Менеджер браузерной сессии.
-
-    Принимает chrome_profile — это позволяет запускать
-    несколько экземпляров с разными профилями (v2.0 многопоточность).
+    Принимает chrome_profile — позволяет запускать несколько экземпляров
+    с разными профилями для многопоточного парсинга.
 
     Использование:
-        with BrowserSession(country='ru', chrome_profile='/path/to/profile') as session:
+        with BrowserSession(country='ru', chrome_profile='/path/') as session:
             html = session.fetch('https://...')
     """
 
     def __init__(self, country: str, chrome_profile: Optional[str] = None):
-        self.country = country
-        # Если профиль не передан — берём дефолтный из settings
-        self._profile = chrome_profile or CHROME_PROFILE
-        self._pw = None
+        self.country    = country
+        self._profile   = chrome_profile or CHROME_PROFILE
+        self._pw        = None
         self._context: Optional[BrowserContext] = None
-        self._page = None
+        self._page      = None
 
     def __enter__(self) -> "BrowserSession":
         import asyncio
         asyncio.set_event_loop(None)
-        self._pw = sync_playwright().start()
+        self._pw      = sync_playwright().start()
         self._context = self._pw.chromium.launch_persistent_context(
             user_data_dir=self._profile,
             headless=HEADLESS,
@@ -59,7 +67,6 @@ class BrowserSession:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-        """Закрываем браузер. Логируем если была ошибка."""
         if exc_type is not None:
             logger.error(f"Session exiting with error: {exc_type.__name__}: {exc_val}")
         try:
@@ -74,18 +81,17 @@ class BrowserSession:
             logger.warning(f"Error stopping playwright: {e}")
 
     def fetch(self, url: str) -> Optional[str]:
-        from config.settings import stop_event
         if stop_event.is_set():
             return None
-        
+
         _human_delay()
+
         try:
             self._page.goto(url, wait_until="domcontentloaded", timeout=15000)
         except Exception as e:
             logger.error(f"Timeout/error fetching {url}: {e}")
             return None
 
-        from config.settings import stop_event
         if stop_event.is_set():
             return None
 
@@ -102,35 +108,13 @@ class BrowserSession:
         return html
 
     def _warmup(self) -> bool:
-        from config.settings import stop_event
-        if stop_event.is_set():
-            return False
-        
-        url = f"{BASE_URL}/{self.country}/gallery"
-        logger.info(f"Browser warmup: {url}")
-        try:
-            self._page.goto(url, wait_until="domcontentloaded", timeout=20000)
-        except Exception as e:
-            logger.error(f"Warmup navigation failed: {e}")
-            return False
-
-        try:
-            self._page.wait_for_function(
-                "() => !document.title.includes('верификац') && "
-                "!document.title.includes('verification')",
-                timeout=15000,
-            )
-            logger.info("KillBot passed — session ready")
-            return True
-        except Exception:
-            logger.warning("KillBot warmup timeout — proceeding anyway")
-            return False
-
-    def _warmup(self) -> bool:
         """
         Прогрев сессии — проходим KillBot через галерею страны.
-        Возвращает True если KillBot пройден, False если таймаут.
+        Возвращает True если KillBot пройден, False если таймаут или stop.
         """
+        if stop_event.is_set():
+            return False
+
         url = f"{BASE_URL}/{self.country}/gallery"
         logger.info(f"Browser warmup: {url}")
 
@@ -138,6 +122,9 @@ class BrowserSession:
             self._page.goto(url, wait_until="domcontentloaded", timeout=20000)
         except Exception as e:
             logger.error(f"Warmup navigation failed: {e}")
+            return False
+
+        if stop_event.is_set():
             return False
 
         try:
@@ -152,8 +139,6 @@ class BrowserSession:
             logger.warning("KillBot warmup timeout — proceeding anyway")
             return False
 
-
-# ─── Приватные утилиты ────────────────────────────────────────────────────────
 
 def _human_delay() -> None:
     """Случайная задержка между запросами — имитация человека."""
