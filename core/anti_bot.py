@@ -8,6 +8,7 @@ BrowserSession — управляет одной сессией Playwright.
 import random
 import time
 from typing import Optional
+from urllib.parse import urlparse
 
 from playwright.sync_api import BrowserContext, sync_playwright
 
@@ -33,23 +34,43 @@ _BLOCK_MARKERS = [
 ]
 
 
+def _parse_proxy(proxy_url: Optional[str]) -> Optional[dict]:
+    """
+    Парсит PROXY_URL в формат Playwright.
+    Поддерживает: http://user:pass@host:port
+    Playwright требует username/password отдельно — не в URL.
+    """
+    if not proxy_url:
+        return None
+    try:
+        p = urlparse(proxy_url)
+        proxy = {"server": f"{p.scheme}://{p.hostname}:{p.port}"}
+        if p.username:
+            proxy["username"] = p.username
+        if p.password:
+            proxy["password"] = p.password
+        return proxy
+    except Exception as e:
+        logger.error(f"Cannot parse PROXY_URL: {e}")
+        return None
+
+
+_PROXY = _parse_proxy(PROXY_URL)
+
+
 class BrowserSession:
     """
     Менеджер браузерной сессии.
     Принимает chrome_profile — позволяет запускать несколько экземпляров
     с разными профилями для многопоточного парсинга.
-
-    Использование:
-        with BrowserSession(country='ru', chrome_profile='/path/') as session:
-            html = session.fetch('https://...')
     """
 
     def __init__(self, country: str, chrome_profile: Optional[str] = None):
-        self.country    = country
-        self._profile   = chrome_profile or CHROME_PROFILE
-        self._pw        = None
+        self.country  = country
+        self._profile = chrome_profile or CHROME_PROFILE
+        self._pw      = None
         self._context: Optional[BrowserContext] = None
-        self._page      = None
+        self._page    = None
 
     def __enter__(self) -> "BrowserSession":
         import asyncio
@@ -60,7 +81,7 @@ class BrowserSession:
             headless=HEADLESS,
             args=["--disable-blink-features=AutomationControlled"],
             channel="chrome",
-            proxy={"server": PROXY_URL} if PROXY_URL else None,
+            proxy=_PROXY,
         )
         self._page = self._context.new_page()
         self._warmup()
@@ -68,7 +89,9 @@ class BrowserSession:
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         if exc_type is not None:
-            logger.error(f"Session exiting with error: {exc_type.__name__}: {exc_val}")
+            logger.error(
+                f"Session exiting with error: {exc_type.__name__}: {exc_val}"
+            )
         try:
             if self._context:
                 self._context.close()
@@ -141,14 +164,12 @@ class BrowserSession:
 
 
 def _human_delay() -> None:
-    """Случайная задержка между запросами — имитация человека."""
     delay = random.uniform(DELAY_MIN, DELAY_MAX)
     logger.debug(f"Sleeping {delay:.2f}s")
     time.sleep(delay)
 
 
 def _is_blocked(html: str) -> bool:
-    """Проверяет наличие маркеров блокировки в HTML."""
     html_lower = html.lower()
     for marker in _BLOCK_MARKERS:
         if marker in html_lower:
