@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 BrowserSession — управляет одной сессией Camoufox.
-Обходит KillBot через Firefox anti-detect browser с ротацией прокси.
+Обходит KillBot через drag-bypass слайдера.
+Работает без прокси через datacenter IP.
 Автор: viramax
 """
 
@@ -16,10 +17,8 @@ from config.settings import (
     DELAY_MAX,
     DELAY_MIN,
     HEADLESS,
-    PROXY_LIST,
     stop_event,
 )
-from core.proxy_pool import ProxyPool, build_proxy_pool
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -33,9 +32,6 @@ _BLOCK_MARKERS = [
     "access denied",
 ]
 
-# Глобальный пул прокси — создаётся один раз при импорте модуля
-_PROXY_POOL: Optional[ProxyPool] = build_proxy_pool(PROXY_LIST)
-
 # Сайты для прогрева — накапливаем cookies и историю
 _WARMUP_SITES = [
     "https://www.google.com",
@@ -46,15 +42,42 @@ _WARMUP_SITES = [
 # Максимальное количество попыток пройти KillBot при warmup
 _MAX_KILLBOT_RETRIES = 3
 
-# Время ожидания JS challenge KillBot (мс)
-_KILLBOT_WAIT_MS = 30_000
+# Время ожидания загрузки KillBot UI (секунды)
+_KILLBOT_UI_WAIT_S = 20
+
+# Расстояние drag слайдера (пиксели)
+_DRAG_DISTANCE_PX = 250
+
+# JS для поиска draggable элемента KillBot
+_FIND_DRAGGABLE_JS = """() => {
+    const all = document.querySelectorAll('*');
+    const result = [];
+    for (const el of all) {
+        const rect = el.getBoundingClientRect();
+        const w = rect.width;
+        const h = rect.height;
+        if (w >= 40 && w <= 70 && h >= 40 && h <= 70 && rect.top > 100) {
+            const style = getComputedStyle(el);
+            const bg = style.backgroundImage || '';
+            if (bg.includes('linear-gradient') && bg.includes('0, 115, 230')) {
+                result.push({
+                    x: Math.round(rect.x + w / 2),
+                    y: Math.round(rect.y + h / 2),
+                    w: Math.round(w),
+                    h: Math.round(h),
+                    cursor: style.cursor,
+                });
+            }
+        }
+    }
+    return result;
+}"""
 
 
 class BrowserSession:
     """
     Менеджер браузерной сессии на базе Camoufox.
-    Принимает profile_path для persistent context.
-    Каждая сессия получает свой прокси из пула.
+    Обходит KillBot через drag-bypass слайдера.
     """
 
     def __init__(self, country: str, profile_path: Optional[str] = None):
@@ -62,7 +85,6 @@ class BrowserSession:
         self._profile_path = profile_path
         self._browser = None
         self._page = None
-        self._proxy_dict: Optional[dict] = None
         self._camoufox_instance = None
 
     def __enter__(self) -> "BrowserSession":
@@ -71,26 +93,16 @@ class BrowserSession:
 
         from camoufox.sync_api import Camoufox
 
-        # Получаем прокси из пула
-        if _PROXY_POOL:
-            self._proxy_dict = _PROXY_POOL.next()
-            logger.info(f"Using proxy: {self._proxy_dict['server']}")
-
-        # На Linux "virtual" использует встроенный Xvfb Camoufox
         headless_mode = "virtual" if HEADLESS else False
 
-        # Параметры запуска Camoufox
         launch_kwargs = {
             "headless": headless_mode,
             "os": CAMOUFOX_OS,
             "humanize": CAMOUFOX_HUMANIZE,
-            "geoip": True,
             "block_webrtc": True,
             "enable_cache": True,
+            "window": (1280, 720),
         }
-
-        if self._proxy_dict:
-            launch_kwargs["proxy"] = self._proxy_dict
 
         if self._profile_path:
             launch_kwargs["persistent_context"] = True
@@ -99,7 +111,6 @@ class BrowserSession:
         self._camoufox_instance = Camoufox(**launch_kwargs)
         self._browser = self._camoufox_instance.start()
 
-        # При persistent_context первая страница уже открыта
         pages = self._browser.pages if hasattr(self._browser, "pages") else []
         if pages:
             self._page = pages[0]
@@ -119,7 +130,6 @@ class BrowserSession:
                 self._page.close()
         except Exception as e:
             logger.warning(f"Error closing page: {e}")
-        # Camoufox.stop() закрывает browser + playwright за нас
         try:
             if self._camoufox_instance:
                 self._camoufox_instance.stop()
@@ -147,7 +157,7 @@ class BrowserSession:
         html = self._page.content()
 
         if _is_blocked(html):
-            logger.warning(f"Blocked on {url} — re-warming")
+            logger.warning(f"Blocked on {url} — re-warming with drag bypass")
             warmup_ok = self._warmup()
             if not warmup_ok:
                 logger.error("Re-warmup failed — KillBot still blocking")
@@ -158,14 +168,14 @@ class BrowserSession:
     def _warmup(self) -> bool:
         """
         Прогрев сессии:
-        1. Посещаем нейтральные сайты (накапливаем cookies/историю)
+        1. Посещаем нейтральные сайты
         2. Заходим на галерею platesmania
-        3. Ждём прохождения KillBot JS challenge
+        3. Если KillBot — выполняем drag-bypass слайдера
         """
         if stop_event.is_set():
             return False
 
-        # Шаг 1: Посещаем 1-2 нейтральных сайта для "истории"
+        # Шаг 1: нейтральные сайты
         neutral_sites = random.sample(
             _WARMUP_SITES, k=min(2, len(_WARMUP_SITES))
         )
@@ -182,7 +192,7 @@ class BrowserSession:
             except Exception as e:
                 logger.debug(f"Warmup neutral site failed ({site_url}): {e}")
 
-        # Шаг 2: Заходим на целевой сайт
+        # Шаг 2: целевой сайт + drag bypass
         gallery_url = f"{BASE_URL}/{self.country}/gallery"
         logger.info(f"Warmup: navigating to {gallery_url}")
 
@@ -192,7 +202,7 @@ class BrowserSession:
 
             try:
                 self._page.goto(
-                    gallery_url, wait_until="domcontentloaded", timeout=25_000
+                    gallery_url, wait_until="domcontentloaded", timeout=30_000
                 )
             except Exception as e:
                 logger.warning(
@@ -201,40 +211,104 @@ class BrowserSession:
                 time.sleep(random.uniform(3.0, 6.0))
                 continue
 
-            self._simulate_reading()
+            # Проверяем title — KillBot или нет
+            self._page.wait_for_timeout(3000)
+            title = self._page.title().lower()
 
-            # Ждём прохождения KillBot JS challenge
-            try:
-                self._page.wait_for_function(
-                    """() => {
-                        const title = document.title.toLowerCase();
-                        return !title.includes('верификац')
-                            && !title.includes('verification')
-                            && !title.includes('killbot');
-                    }""",
-                    timeout=_KILLBOT_WAIT_MS,
-                )
+            if "verification" not in title and "верификац" not in title:
                 logger.info(
-                    f"KillBot passed on attempt {attempt} — session ready"
+                    f"KillBot not detected on attempt {attempt} — direct access"
                 )
-                self._browse_gallery_pages(gallery_url, pages_count=3)
                 return True
 
-            except Exception:
-                logger.warning(
-                    f"KillBot challenge timeout "
-                    f"(attempt {attempt}/{_MAX_KILLBOT_RETRIES})"
-                )
-                if attempt < _MAX_KILLBOT_RETRIES:
-                    wait = random.uniform(5.0, 10.0)
-                    logger.info(f"Waiting {wait:.1f}s before retry...")
-                    time.sleep(wait)
+            # KillBot detected — drag bypass
+            logger.info(
+                f"KillBot detected (attempt {attempt}) — executing drag bypass"
+            )
+            if self._drag_bypass():
+                logger.info("KillBot drag bypass successful — session ready")
+                self._browse_gallery_pages(gallery_url, pages_count=2)
+                return True
+
+            logger.warning(
+                f"Drag bypass failed (attempt {attempt}/{_MAX_KILLBOT_RETRIES})"
+            )
+            if attempt < _MAX_KILLBOT_RETRIES:
+                wait = random.uniform(5.0, 10.0)
+                logger.info(f"Waiting {wait:.1f}s before retry...")
+                time.sleep(wait)
 
         logger.error("KillBot warmup failed after all attempts")
         return False
 
+    def _drag_bypass(self) -> bool:
+        """
+        Обходит KillBot через drag слайдера.
+        1. Ждём загрузки KillBot UI
+        2. Убираем preloader
+        3. Находим draggable элемент (gradient + 40-70px)
+        4. Тянем вправо на 250px
+        5. Проверяем что title сменился
+        """
+        # Ждём загрузки KillBot UI
+        logger.debug(f"Waiting {_KILLBOT_UI_WAIT_S}s for KillBot UI to load")
+        self._page.wait_for_timeout(_KILLBOT_UI_WAIT_S * 1000)
+
+        # Убираем preloader если есть
+        self._page.evaluate(
+            "document.querySelector('#preloader-w')?.remove()"
+        )
+        self._page.wait_for_timeout(1000)
+
+        # Ищем draggable элементы
+        elements = self._page.evaluate(_FIND_DRAGGABLE_JS)
+
+        if not elements:
+            logger.warning("No draggable elements found")
+            return False
+
+        logger.debug(f"Found {len(elements)} draggable candidates")
+
+        # Приоритет: cursor:pointer первым, остальные потом
+        elements.sort(key=lambda e: 0 if e["cursor"] == "pointer" else 1)
+
+        for el in elements:
+            if stop_event.is_set():
+                return False
+
+            start_x = el["x"]
+            start_y = el["y"]
+            logger.debug(
+                f"Dragging element at ({start_x},{start_y}) "
+                f"{el['w']}x{el['h']} cursor={el['cursor']}"
+            )
+
+            # Human-like drag: двигаемся по 10px с рандомной задержкой
+            self._page.mouse.move(start_x, start_y)
+            self._page.mouse.down()
+            steps = _DRAG_DISTANCE_PX // 10
+            for i in range(steps):
+                self._page.mouse.move(
+                    start_x + ((i + 1) * 10),
+                    start_y + random.randint(-2, 2),
+                )
+                time.sleep(random.uniform(0.03, 0.06))
+            self._page.mouse.up()
+
+            # Проверяем результат
+            self._page.wait_for_timeout(3000)
+            title = self._page.title().lower()
+
+            if "verification" not in title and "верификац" not in title:
+                logger.info(f"Drag bypass succeeded — title: {self._page.title()}")
+                return True
+
+            logger.debug("Drag did not bypass — trying next element")
+
+        return False
+
     def _browse_gallery_pages(self, gallery_url: str, pages_count: int) -> None:
-        """Листаем страницы галереи для прогрева. Накапливаем cookies."""
+        """Листаем страницы галереи для прогрева."""
         for page_num in range(2, pages_count + 2):
             if stop_event.is_set():
                 return
@@ -255,7 +329,6 @@ class BrowserSession:
         """
         try:
             time.sleep(random.uniform(0.5, 1.5))
-
             scroll_y = random.randint(200, 600)
             self._page.evaluate(f"window.scrollBy(0, {scroll_y})")
             time.sleep(random.uniform(0.3, 0.8))

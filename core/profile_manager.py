@@ -1,6 +1,7 @@
 import json
 import os
 import random
+import time
 from dataclasses import dataclass, asdict
 from datetime import datetime
 from typing import Optional
@@ -12,8 +13,39 @@ logger = get_logger(__name__)
 
 PROFILES_DIR = os.path.join(OUTPUT_DIR, "profiles")
 PROFILES_META = os.path.join(PROFILES_DIR, "profiles.json")
-WARMUP_PAGES = 5
+WARMUP_PAGES = 3
 PROFILE_TTL_HOURS = 12
+
+# Время ожидания загрузки KillBot UI (секунды)
+_KILLBOT_UI_WAIT_S = 20
+
+# Расстояние drag слайдера (пиксели)
+_DRAG_DISTANCE_PX = 250
+
+# JS для поиска draggable элемента KillBot
+_FIND_DRAGGABLE_JS = """() => {
+    const all = document.querySelectorAll('*');
+    const result = [];
+    for (const el of all) {
+        const rect = el.getBoundingClientRect();
+        const w = rect.width;
+        const h = rect.height;
+        if (w >= 40 && w <= 70 && h >= 40 && h <= 70 && rect.top > 100) {
+            const style = getComputedStyle(el);
+            const bg = style.backgroundImage || '';
+            if (bg.includes('linear-gradient') && bg.includes('0, 115, 230')) {
+                result.push({
+                    x: Math.round(rect.x + w / 2),
+                    y: Math.round(rect.y + h / 2),
+                    w: Math.round(w),
+                    h: Math.round(h),
+                    cursor: style.cursor,
+                });
+            }
+        }
+    }
+    return result;
+}"""
 
 
 @dataclass
@@ -140,7 +172,7 @@ class ProfileManager:
                 logger.info(f"Adding {self._count - len(self._profiles)} profiles")
                 self._create_profiles(start_index=len(self._profiles))
         else:
-            logger.info(f"Creating {self._count} new Chrome profiles")
+            logger.info(f"Creating {self._count} new profiles")
             self._create_profiles(start_index=0)
 
     def _create_profiles(self, start_index: int) -> None:
@@ -155,8 +187,8 @@ class ProfileManager:
 
     def _warmup_profile(self, profile: ProfileInfo, country: str) -> None:
         """
-        Прогревает профиль через Camoufox.
-        Посещает нейтральные сайты + галерею platesmania.
+        Прогревает профиль через Camoufox с drag-bypass KillBot.
+        Без прокси — через datacenter IP.
         """
         import asyncio
         from camoufox.sync_api import Camoufox
@@ -164,20 +196,13 @@ class ProfileManager:
             CAMOUFOX_HUMANIZE,
             CAMOUFOX_OS,
             HEADLESS,
-            PROXY_LIST,
             stop_event,
         )
-        from core.proxy_pool import build_proxy_pool
 
         if stop_event.is_set():
             return
 
         logger.info(f"Warming up {profile.profile_id} with Camoufox...")
-
-        # Привязка прокси к профилю по индексу
-        pool = build_proxy_pool(PROXY_LIST)
-        profile_index = int(profile.profile_id.split("_")[-1])
-        proxy_dict = pool.get_by_index(profile_index) if pool else None
 
         headless_mode = "virtual" if HEADLESS else False
 
@@ -185,18 +210,15 @@ class ProfileManager:
             "headless": headless_mode,
             "os": CAMOUFOX_OS,
             "humanize": CAMOUFOX_HUMANIZE,
-            "geoip": True,
             "block_webrtc": True,
             "persistent_context": True,
             "user_data_dir": profile.path,
+            "window": (1280, 720),
         }
-        if proxy_dict:
-            launch_kwargs["proxy"] = proxy_dict
 
         cfox = None
         browser = None
         try:
-            # Сбрасываем event loop — иначе Sync API конфликтует с uvicorn
             asyncio.set_event_loop(None)
 
             cfox = Camoufox(**launch_kwargs)
@@ -221,28 +243,23 @@ class ProfileManager:
             # Посещаем галерею
             gallery_url = f"{BASE_URL}/{country}/gallery"
             page.goto(
-                gallery_url, wait_until="domcontentloaded", timeout=25_000
+                gallery_url, wait_until="domcontentloaded", timeout=30_000
             )
+            page.wait_for_timeout(3000)
 
-            # Ждём KillBot
-            try:
-                page.wait_for_function(
-                    """() => {
-                        const t = document.title.toLowerCase();
-                        return !t.includes('верификац')
-                            && !t.includes('verification')
-                            && !t.includes('killbot');
-                    }""",
-                    timeout=30_000,
-                )
-                logger.info(f"{profile.profile_id}: KillBot passed")
-            except Exception:
-                logger.warning(
-                    f"{profile.profile_id}: KillBot timeout during warmup"
-                )
+            title = page.title().lower()
+            if "verification" in title or "верификац" in title:
+                logger.info(f"{profile.profile_id}: KillBot detected — drag bypass")
+                passed = self._drag_bypass_page(page, stop_event)
+                if passed:
+                    logger.info(f"{profile.profile_id}: KillBot drag bypass OK")
+                else:
+                    logger.warning(f"{profile.profile_id}: KillBot drag bypass failed")
+            else:
+                logger.info(f"{profile.profile_id}: no KillBot — direct access")
 
             # Листаем галерею
-            for page_num in range(2, WARMUP_PAGES + 1):
+            for page_num in range(2, WARMUP_PAGES + 2):
                 if stop_event.is_set():
                     break
                 try:
@@ -275,6 +292,60 @@ class ProfileManager:
                     cfox.stop()
             except Exception:
                 pass
+
+    @staticmethod
+    def _drag_bypass_page(page, stop_event) -> bool:
+        """
+        Drag-bypass KillBot слайдера на переданной странице.
+        Переиспользуется в warmup профилей.
+        """
+        logger.info(f"Waiting {_KILLBOT_UI_WAIT_S}s for KillBot UI to load")
+        page.wait_for_timeout(_KILLBOT_UI_WAIT_S * 1000)
+
+        page.evaluate("document.querySelector('#preloader-w')?.remove()")
+        page.wait_for_timeout(1000)
+
+        elements = page.evaluate(_FIND_DRAGGABLE_JS)
+
+        if not elements:
+            logger.warning("No draggable elements found in warmup")
+            return False
+
+        logger.debug(f"Found {len(elements)} draggable candidates")
+        elements.sort(key=lambda e: 0 if e["cursor"] == "pointer" else 1)
+
+        for el in elements:
+            if stop_event.is_set():
+                return False
+
+            start_x = el["x"]
+            start_y = el["y"]
+            logger.debug(
+                f"Dragging element at ({start_x},{start_y}) "
+                f"{el['w']}x{el['h']} cursor={el['cursor']}"
+            )
+
+            page.mouse.move(start_x, start_y)
+            page.mouse.down()
+            steps = _DRAG_DISTANCE_PX // 10
+            for i in range(steps):
+                page.mouse.move(
+                    start_x + ((i + 1) * 10),
+                    start_y + random.randint(-2, 2),
+                )
+                time.sleep(random.uniform(0.03, 0.06))
+            page.mouse.up()
+
+            page.wait_for_timeout(3000)
+            title = page.title().lower()
+
+            if "verification" not in title and "верификац" not in title:
+                logger.info(f"Drag bypass succeeded — title: {page.title()}")
+                return True
+
+            logger.debug("Drag did not bypass — trying next element")
+
+        return False
 
     def _needs_warmup(self, profile: ProfileInfo) -> bool:
         """Профиль нужно греть если никогда не грели или TTL истёк."""
