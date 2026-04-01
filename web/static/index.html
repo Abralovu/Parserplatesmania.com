@@ -35,7 +35,6 @@
         line-height: 1.5;
       }
 
-      /* ── Header ── */
       nav {
         height: 48px;
         padding: 0 20px;
@@ -81,7 +80,6 @@
       }
       .nav-conn { margin-left: auto; font-size: 11px; color: var(--t3); }
 
-      /* ── Layout ── */
       main {
         max-width: 1240px;
         margin: 0 auto;
@@ -92,7 +90,6 @@
         align-items: start;
       }
 
-      /* ── Panel ── */
       .panel {
         background: var(--card);
         border: 1px solid var(--line);
@@ -115,7 +112,6 @@
         justify-content: space-between;
       }
 
-      /* ── Fields ── */
       .field { margin-bottom: 10px; }
       .field:last-child { margin-bottom: 0; }
       .field-label {
@@ -153,7 +149,6 @@
       }
       select option { background: #0f1017; }
 
-      /* ── Segment tabs ── */
       .seg {
         display: flex;
         background: var(--input);
@@ -182,7 +177,6 @@
         box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
       }
 
-      /* ── Speed cards ── */
       .speeds { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
       .spd {
         background: var(--input);
@@ -202,7 +196,6 @@
       .spd-name { font-size: 10px; font-weight: 600; color: var(--t1); }
       .spd-sub { font-size: 9px; color: var(--t3); margin-top: 1px; }
 
-      /* ── Toggle row ── */
       .trow {
         display: flex;
         align-items: center;
@@ -227,11 +220,10 @@
         accent-color: var(--blue);
         cursor: pointer;
         flex-shrink: 0;
-        pointer-events: none; /* клики обрабатывает родительский .trow */
+        pointer-events: none;
       }
       .trow-text { font-size: 11px; color: var(--t1); font-weight: 400; }
 
-      /* ── Info block ── */
       .info {
         background: rgba(75, 130, 245, 0.05);
         border: 1px solid rgba(75, 130, 245, 0.12);
@@ -242,12 +234,10 @@
         line-height: 1.6;
       }
 
-      /* ── Speed hint ── */
       .spd-hint { font-size: 9px; color: var(--t3); line-height: 1.6; margin-top: 2px; }
       .spd-hint a { color: var(--blue); cursor: pointer; text-decoration: none; }
       .spd-hint a:hover { text-decoration: underline; }
 
-      /* ── Custom workers ── */
       .custom-spd {
         margin-top: 8px;
         padding: 10px;
@@ -257,7 +247,6 @@
       }
       .custom-spd-warn { font-size: 9px; color: var(--t3); margin-top: 5px; line-height: 1.5; }
 
-      /* ── Buttons ── */
       .btn {
         width: 100%;
         padding: 9px 12px;
@@ -318,7 +307,6 @@
       .icon-btn.b { color: var(--blue); border-color: rgba(75, 130, 245, 0.2); }
       .icon-btn.b:hover { background: rgba(75, 130, 245, 0.05); border-color: rgba(75, 130, 245, 0.5); }
 
-      /* ── Stats ── */
       .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; margin-bottom: 12px; }
       .stat {
         background: var(--input);
@@ -336,12 +324,10 @@
       }
       .stat-l { font-size: 8px; color: var(--t3); margin-top: 3px; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; }
 
-      /* ── Progress bar ── */
       .pbar-wrap { background: var(--input); border-radius: 100px; height: 2px; overflow: hidden; margin: 10px 0 5px; }
       .pbar { height: 100%; background: var(--grad); border-radius: 100px; transition: width 0.5s ease; width: 0%; }
       .ppct { font-size: 9px; color: var(--t3); text-align: right; font-variant-numeric: tabular-nums; }
 
-      /* ── Log ── */
       .logbox {
         background: var(--input);
         border: 1px solid var(--line);
@@ -362,7 +348,6 @@
       .ll.err { color: var(--red); }
       .ll.inf { color: #6b9cf5; }
 
-      /* ── DB pills ── */
       .pills { display: flex; flex-wrap: wrap; gap: 5px; }
       .pill {
         background: var(--input);
@@ -377,7 +362,6 @@
       .pill b { color: var(--t2); font-weight: 500; }
       .pill em { color: var(--blue); font-style: normal; font-weight: 600; }
 
-      /* ── Filter row ── */
       .filters {
         display: grid;
         grid-template-columns: 1fr 1fr 1fr auto;
@@ -387,7 +371,6 @@
       }
       .filters .field { margin: 0; }
 
-      /* ── Export box ── */
       .export {
         background: var(--input);
         border: 1px solid var(--line);
@@ -399,7 +382,6 @@
       .export-desc { font-size: 10px; color: var(--t2); margin-bottom: 9px; line-height: 1.5; }
       .export-btns { display: flex; gap: 7px; flex-wrap: wrap; }
 
-      /* ── Table ── */
       .tbl-wrap {
         max-height: 340px;
         overflow-y: auto;
@@ -440,7 +422,6 @@
 
       .empty { text-align: center; color: var(--t3); padding: 22px; font-size: 11px; }
 
-      /* ── History ── */
       .hist-item {
         padding: 9px 10px;
         background: var(--input);
@@ -466,13 +447,7 @@
     </nav>
 
     <main>
-      <!-- ══════════════════════════════════════
-           ЛЕВАЯ КОЛОНКА
-           Все 4 панели — внутри этого <div>
-           ══════════════════════════════════════ -->
       <div>
-
-        <!-- Парсинг -->
         <div class="panel">
           <div class="panel-title">Парсинг</div>
 
@@ -591,8 +566,6 @@
             </div>
           </div>
 
-          <!-- pointer-events: none на чекбоксе — клики обрабатывает .trow,
-               исключает двойной инверт при прямом клике на <input> -->
           <div class="trow" id="freshRow" onclick="toggleFresh()">
             <input type="checkbox" id="freshCb" class="trow-cb" />
             <span class="trow-text">Начать заново (сбросить прогресс)</span>
@@ -602,7 +575,6 @@
           <button class="btn btn-stop" id="btnStop" onclick="stopScrape()" disabled>■ Остановить</button>
         </div>
 
-        <!-- Собрано данных -->
         <div class="panel">
           <div class="panel-title">Собрано данных</div>
           <div class="pills" id="pills">
@@ -610,7 +582,6 @@
           </div>
         </div>
 
-        <!-- История сессий -->
         <div class="panel">
           <div class="panel-title">
             <span>История</span>
@@ -621,7 +592,6 @@
           </div>
         </div>
 
-        <!-- Опасная зона -->
         <div class="panel">
           <div class="panel-title" style="color: var(--red)">⚠ Сброс данных</div>
           <div style="font-size: 10px; color: var(--t2); margin-bottom: 10px; line-height: 1.6;">
@@ -631,16 +601,9 @@
             🗑 Удалить все данные
           </button>
         </div>
-
       </div>
-      <!-- ══ конец левой колонки ══ -->
 
-      <!-- ══════════════════════════════════════
-           ПРАВАЯ КОЛОНКА
-           ══════════════════════════════════════ -->
       <div>
-
-        <!-- Прогресс -->
         <div class="panel">
           <div class="panel-title">
             <span>Прогресс</span>
@@ -664,7 +627,6 @@
           <div class="ppct" id="ppct">0%</div>
         </div>
 
-        <!-- Лог -->
         <div class="panel">
           <div class="panel-title">
             <span>Лог</span>
@@ -673,7 +635,6 @@
           <div class="logbox" id="logbox"></div>
         </div>
 
-        <!-- Данные -->
         <div class="panel">
           <div class="panel-title">
             <span>Данные</span>
@@ -751,25 +712,20 @@
             </table>
           </div>
         </div>
-
       </div>
-      <!-- ══ конец правой колонки ══ -->
-
     </main>
 
     <script>
-      // ── Константы ────────────────────────────────────────────────────────────
       const LOG_MAX_LINES   = 100;
       const WS_RECONNECT_MS = 3000;
       const STATUS_POLL_MS  = 15_000;
       const HISTORY_POLL_MS = 30_000;
 
-      // ── Состояние ────────────────────────────────────────────────────────────
       let ws       = null;
-      let totalIds = 0;   // сбрасывается в начале каждого startScrape
+      let totalIds = 0;
       let spd      = 3;
 
-      // ── WebSocket ────────────────────────────────────────────────────────────
+      // ── WebSocket ──────────────────────────────────────────────────────────
       function connectWS() {
         ws = new WebSocket(`ws://${location.host}/ws/progress`);
 
@@ -796,14 +752,14 @@
       }
 
       function onProg(d) {
-        document.getElementById("sProc").textContent = d.processed.toLocaleString();
+        document.getElementById("sProc").textContent  = d.processed.toLocaleString();
         document.getElementById("sSaved").textContent = d.saved.toLocaleString();
-        document.getElementById("sId").textContent   = d.current_id.toLocaleString();
+        document.getElementById("sId").textContent    = d.current_id.toLocaleString();
 
         if (totalIds > 0) {
           const pct = Math.min(100, Math.round((d.processed / totalIds) * 100));
           document.getElementById("pbar").style.width = pct + "%";
-          document.getElementById("ppct").textContent  = pct + "%";
+          document.getElementById("ppct").textContent = pct + "%";
         }
 
         addLog(`[W${d.worker_id}] обработано=${d.processed} сохранено=${d.saved} id=${d.current_id}`, "inf");
@@ -833,9 +789,24 @@
           ns.style.color = "var(--t3)";
           rm.textContent = "—";
         }
+
+        // Синхронизация UI между устройствами:
+        // при открытии панели с другого устройства кнопки
+        // сразу отражают реальное состояние парсера.
+        setRunning(s.is_running);
+
+        // Обновляем счётчики из heartbeat если парсинг идёт —
+        // даже если progress сообщение пропустили.
+        if (s.is_running && s.processed > 0) {
+          document.getElementById("sProc").textContent  = s.processed.toLocaleString();
+          document.getElementById("sSaved").textContent = s.saved.toLocaleString();
+          if (s.current_id > 0) {
+            document.getElementById("sId").textContent = s.current_id.toLocaleString();
+          }
+        }
       }
 
-      // ── Режим / настройки ────────────────────────────────────────────────────
+      // ── Режим / настройки ──────────────────────────────────────────────────
       function setMode(m, el) {
         document.querySelectorAll(".seg-btn").forEach(b => b.classList.remove("on"));
         el.classList.add("on");
@@ -861,9 +832,8 @@
         b.style.display = b.style.display === "none" ? "block" : "none";
       }
 
-      // ── Старт ────────────────────────────────────────────────────────────────
+      // ── Старт ──────────────────────────────────────────────────────────────
       async function startScrape() {
-        // Сбрасываем totalIds перед каждым новым запуском
         totalIds = 0;
         document.getElementById("pbar").style.width = "0%";
         document.getElementById("ppct").textContent = "0%";
@@ -905,7 +875,7 @@
         }
       }
 
-      // ── Стоп ─────────────────────────────────────────────────────────────────
+      // ── Стоп ───────────────────────────────────────────────────────────────
       async function stopScrape() {
         try {
           const r = await fetch("/api/scrape/stop", { method: "POST" });
@@ -926,7 +896,7 @@
         document.getElementById("btnStop").disabled = !r;
       }
 
-      // ── Статус БД ────────────────────────────────────────────────────────────
+      // ── Статус БД ──────────────────────────────────────────────────────────
       async function loadStatus() {
         try {
           const d  = await (await fetch("/api/status")).json();
@@ -944,7 +914,7 @@
         }
       }
 
-      // ── Записи ───────────────────────────────────────────────────────────────
+      // ── Записи ─────────────────────────────────────────────────────────────
       async function loadRecs() {
         const p  = new URLSearchParams({ limit: "50" });
         const fc = document.getElementById("fC").value;
@@ -981,7 +951,7 @@
         }
       }
 
-      // ── Скачать ──────────────────────────────────────────────────────────────
+      // ── Скачать ────────────────────────────────────────────────────────────
       function dl(type) {
         const p  = new URLSearchParams();
         const fc = document.getElementById("fC").value;
@@ -993,7 +963,7 @@
         window.open(`/api/download/${type}?${p}`, "_blank");
       }
 
-      // ── Лог ──────────────────────────────────────────────────────────────────
+      // ── Лог ────────────────────────────────────────────────────────────────
       function addLog(msg, type = "") {
         const b = document.getElementById("logbox");
         const d = document.createElement("div");
@@ -1008,7 +978,7 @@
         document.getElementById("logbox").innerHTML = "";
       }
 
-      // ── История ──────────────────────────────────────────────────────────────
+      // ── История ────────────────────────────────────────────────────────────
       async function loadHistory() {
         try {
           const d  = await (await fetch("/api/history")).json();
@@ -1037,7 +1007,7 @@
         }
       }
 
-      // ── Сброс ────────────────────────────────────────────────────────────────
+      // ── Сброс ──────────────────────────────────────────────────────────────
       async function confirmReset() {
         const ok1 = confirm("⚠ ВНИМАНИЕ!\n\nЭто удалит:\n• Все собранные номера из базы\n• Все скачанные фото\n• Весь прогресс парсинга\n• Все профили браузера\n\nДействие необратимо. Продолжить?");
         if (!ok1) return;
@@ -1052,7 +1022,7 @@
           });
           const d = await r.json();
           if (d.ok) {
-            addLog("🗑 Все данные удалены", "inf");  // inf (синий) — действие выполнено, не ошибка
+            addLog("🗑 Все данные удалены", "inf");
             loadStatus();
             loadHistory();
           } else {
@@ -1063,7 +1033,7 @@
         }
       }
 
-      // ── Init ─────────────────────────────────────────────────────────────────
+      // ── Init ───────────────────────────────────────────────────────────────
       connectWS();
       loadStatus();
       loadHistory();

@@ -1,11 +1,3 @@
-#!/usr/bin/env python3
-"""
-Database layer — два уровня:
-  async (aiosqlite) — для FastAPI endpoints
-  sync  (sqlite3)   — для парсера, без конфликта event loop
-Автор: viramax
-"""
-
 import os
 import sqlite3
 import threading

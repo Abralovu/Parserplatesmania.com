@@ -1,11 +1,3 @@
-#!/usr/bin/env python3
-"""
-BrowserSession — управляет одной сессией Camoufox.
-Обходит KillBot через drag-bypass слайдера.
-Работает без прокси через datacenter IP.
-Автор: viramax
-"""
-
 import random
 import time
 from typing import Optional
@@ -120,6 +112,7 @@ class BrowserSession:
         self._warmup()
         return self
 
+
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         if exc_type is not None:
             logger.error(
@@ -131,10 +124,11 @@ class BrowserSession:
         except Exception as e:
             logger.warning(f"Error closing page: {e}")
         try:
-            if self._camoufox_instance:
-                self._camoufox_instance.stop()
+
+            if self._browser:
+                self._browser.close()
         except Exception as e:
-            logger.warning(f"Error stopping Camoufox: {e}")
+            logger.warning(f"Error closing browser: {e}")
 
     def fetch(self, url: str) -> Optional[str]:
         """Загружает страницу. Возвращает HTML или None если заблокированы."""

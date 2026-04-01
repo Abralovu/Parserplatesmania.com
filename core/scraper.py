@@ -1,10 +1,3 @@
-#!/usr/bin/env python3
-"""
-Core scraper — парсит диапазон ID для указанной страны.
-Использует синхронный sqlite3 — без конфликта event loop.
-Автор: viramax
-"""
-
 import re
 import time
 from typing import Optional

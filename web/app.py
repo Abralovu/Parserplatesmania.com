@@ -8,13 +8,13 @@ WebSocket — прогресс в реальном времени.
 import asyncio
 import json
 import os
+import signal
 import shutil
 import threading
 from contextlib import asynccontextmanager
 from datetime import datetime
 from queue import Empty, Queue
 from typing import Optional
-
 
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -23,7 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 
 from config.settings import DB_PATH, OUTPUT_DIR, stop_event
-from storage.database import get_count, get_records, init_db
+from storage.database import get_count, get_records, init_db, sync_get_count
 from utils.checkpoint import get_all_checkpoints
 from utils.logger import get_logger
 
@@ -44,8 +44,6 @@ _HISTORY_MAX_SESSIONS: int = 50
 
 # ─── Состояние парсера ────────────────────────────────────────────────────────
 
-# Lock защищает _scrape_state от race condition:
-# executor thread пишет, FastAPI event loop читает одновременно.
 _state_lock = threading.Lock()
 
 _scrape_state: dict = {
@@ -59,10 +57,7 @@ _scrape_state: dict = {
     "started_at": None,
 }
 
-# Lock защищает history.json от одновременной записи
-# при парсинге "Все страны" (несколько потоков финишируют подряд).
 _history_lock = threading.Lock()
-
 _progress_queue: Queue = Queue()
 
 
@@ -118,9 +113,6 @@ async def root() -> str:
 
 @app.get("/api/status")
 async def get_status() -> dict:
-    """
-    Статистика по БД — один GROUP BY запрос вместо N+1.
-    """
     from storage.database import get_counts_by_country
     stats = await get_counts_by_country()
     with _state_lock:
@@ -150,9 +142,7 @@ async def start_scrape(body: ScrapeStartRequest) -> dict:
             "started_at": datetime.utcnow().isoformat(),
         })
 
-    # stop_event сбрасываем ДО запуска потока — нет окна гонки
     stop_event.clear()
-
 
     t = threading.Thread(
         target=_run_scraper_sync,
@@ -198,7 +188,10 @@ async def get_filtered_records(
         limit=limit,
         offset=offset,
     )
-    return {"records": [r.to_dict() for r in records], "count": len(records)}
+    return {
+        "records": [r.to_dict() for r in records],
+        "count": len(records),
+    }
 
 
 # ─── API: экспорт ─────────────────────────────────────────────────────────────
@@ -266,10 +259,6 @@ async def get_history() -> dict:
 
 @app.post("/api/reset")
 async def reset_all(body: ResetRequest) -> dict:
-    """
-    Полный сброс: база данных, фото, checkpoint, профили.
-    Требует явного подтверждения: { "confirm": true }
-    """
     if not body.confirm:
         return {"ok": False, "error": "Требуется подтверждение"}
 
@@ -280,17 +269,23 @@ async def reset_all(body: ResetRequest) -> dict:
     errors: list[str] = []
 
     targets = [
-        ("DB",          lambda: os.remove(DB_PATH)),
-        ("Photos",      lambda: shutil.rmtree(os.path.join(OUTPUT_DIR, "photos"))),
-        ("Checkpoint",  lambda: os.remove(os.path.join(OUTPUT_DIR, "checkpoint.json"))),
-        ("Profiles",    lambda: shutil.rmtree(os.path.join(OUTPUT_DIR, "profiles"))),
+        ("DB", lambda: os.remove(DB_PATH)),
+        ("Photos", lambda: shutil.rmtree(
+            os.path.join(OUTPUT_DIR, "photos")
+        )),
+        ("Checkpoint", lambda: os.remove(
+            os.path.join(OUTPUT_DIR, "checkpoint.json")
+        )),
+        ("Profiles", lambda: shutil.rmtree(
+            os.path.join(OUTPUT_DIR, "profiles")
+        )),
     ]
 
     for label, action in targets:
         try:
             action()
         except FileNotFoundError:
-            pass  # уже не существует — ок
+            pass
         except Exception as e:
             errors.append(f"{label}: {e}")
 
@@ -311,9 +306,6 @@ async def websocket_progress(websocket: WebSocket) -> None:
     logger.info("WebSocket client connected")
     try:
         while True:
-            # Дренируем очередь — ищем is_done по ВСЕМ сообщениям,
-            # не только последнему. is_done может прийти не последним
-            # если поток успел отправить ещё одно сообщение после него.
             messages = []
             while True:
                 try:
@@ -356,7 +348,19 @@ async def websocket_progress(websocket: WebSocket) -> None:
         logger.info("WebSocket client disconnected")
 
 
-# ─── Фоновый запуск парсера ───────────────────────────────────────────────────
+# ─── Утилиты для подсчёта записей ─────────────────────────────────────────────
+
+def _get_total_count(country: str) -> int:
+    """
+    Считает записи в БД. Для 'all' — сумма по всем странам.
+    Используется для вычисления saved в истории сессий.
+    """
+    if country == "all":
+        return sum(sync_get_count(c) for c in _ALL_COUNTRIES)
+    return sync_get_count(country)
+
+
+# ─── Сохранение истории ───────────────────────────────────────────────────────
 
 def _save_session_to_history(
     country: str,
@@ -368,8 +372,7 @@ def _save_session_to_history(
 ) -> None:
     """
     Сохраняет сессию в history.json.
-    Lock защищает от race condition при парсинге "Все страны":
-    несколько потоков могут финишировать почти одновременно.
+    Lock защищает от race condition при парсинге "Все страны".
     """
     os.makedirs(os.path.dirname(_HISTORY_FILE), exist_ok=True)
 
@@ -400,6 +403,8 @@ def _save_session_to_history(
             logger.error(f"Cannot save history: {e}")
 
 
+# ─── Фоновый запуск парсера ───────────────────────────────────────────────────
+
 def _run_scraper_sync(
     country: str,
     workers: int,
@@ -409,14 +414,27 @@ def _run_scraper_sync(
     end_id: int,
 ) -> None:
     """
-    Точка входа для executor thread.
+    Точка входа для daemon thread.
     Итерирует по странам (или одна страна), вызывает _scrape_one.
     """
     with _state_lock:
-        started_at = _scrape_state.get("started_at") or datetime.utcnow().isoformat()
+        started_at = (
+            _scrape_state.get("started_at")
+            or datetime.utcnow().isoformat()
+        )
+
+    # Запоминаем count ДО парсинга.
+    # В историю попадёт разница (только новые записи этой сессии),
+    # а не весь count из БД включая предыдущие запуски.
+    try:
+        count_before = _get_total_count(country)
+    except Exception:
+        count_before = 0
 
     try:
-        countries = _ALL_COUNTRIES if country == "all" else [country]
+        countries = (
+            _ALL_COUNTRIES if country == "all" else [country]
+        )
         for c in countries:
             if stop_event.is_set():
                 logger.info(f"Stop signal — halting at country={c}")
@@ -430,14 +448,24 @@ def _run_scraper_sync(
             _scrape_state["error"] = str(e)
     finally:
         stopped_manually = stop_event.is_set()
+
+        # Реальный count из БД — источник правды.
+        # _scrape_state["saved"] отстаёт из-за WebSocket queue.
+        try:
+            count_after = _get_total_count(country)
+            actual_saved = max(0, count_after - count_before)
+        except Exception as e:
+            logger.warning(f"Cannot get DB count for history: {e}")
+            with _state_lock:
+                actual_saved = _scrape_state.get("saved", 0)
+
         with _state_lock:
             _scrape_state["is_running"] = False
-            saved = _scrape_state.get("saved", 0)
 
         _save_session_to_history(
             country=country,
             workers=workers,
-            saved=saved,
+            saved=actual_saved,
             started_at=started_at,
             finished_at=datetime.utcnow().isoformat(),
             stopped_manually=stopped_manually,
@@ -463,7 +491,10 @@ def _scrape_one(
             start_id, end_id = detect_range(country)
             logger.info(f"Auto range {country}: {start_id}..{end_id}")
         except Exception as e:
-            logger.warning(f"Auto-detect failed for {country}: {e} — using defaults")
+            logger.warning(
+                f"Auto-detect failed for {country}: {e} "
+                f"— using defaults"
+            )
             start_id = 1
             end_id = 100_000
 
@@ -472,7 +503,7 @@ def _scrape_one(
             from core.profile_manager import ProfileManager
             from core.worker_pool import WorkerPool
             manager = ProfileManager(count=workers)
-            manager.ensure_ready(country=country)
+            manager.ensure_ready()
             pool = WorkerPool(manager, _progress_queue)
             pool.run(
                 country=country,
@@ -493,7 +524,23 @@ def _scrape_one(
         logger.error(f"Error scraping {country}: {e}")
 
 
+# ─── SIGTERM handler для systemd ──────────────────────────────────────────────
+
+def _setup_signal_handlers() -> None:
+    """
+    systemctl stop → SIGTERM → stop_event.set()
+    → воркеры завершаются корректно → uvicorn shutdown.
+    Без этого Firefox процессы остаются зомби.
+    """
+    def _handle_sigterm(signum, frame):
+        logger.info("SIGTERM received — setting stop_event")
+        stop_event.set()
+
+    signal.signal(signal.SIGTERM, _handle_sigterm)
+
+
 # ─── Точка входа ──────────────────────────────────────────────────────────────
 
 def start_web(host: str = "0.0.0.0", port: int = 8000) -> None:
+    _setup_signal_handlers()
     uvicorn.run(app, host=host, port=port, log_level="warning")
