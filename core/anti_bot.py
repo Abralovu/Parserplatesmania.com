@@ -114,21 +114,51 @@ class BrowserSession:
 
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-        if exc_type is not None:
-            logger.error(
-                f"Session exiting with error: {exc_type.__name__}: {exc_val}"
-            )
-        try:
-            if self._page and not self._page.is_closed():
-                self._page.close()
-        except Exception as e:
-            logger.warning(f"Error closing page: {e}")
-        try:
+            if exc_type is not None:
+                logger.error(
+                    f"Session exiting with error: "
+                    f"{exc_type.__name__}: {exc_val}"
+                )
+            try:
+                if self._page and not self._page.is_closed():
+                    self._page.close()
+            except Exception as e:
+                logger.warning(f"Error closing page: {e}")
+            try:
+                if self._browser:
+                    self._browser.close()
+            except Exception as e:
+                logger.warning(f"Error closing browser: {e}")
 
-            if self._browser:
-                self._browser.close()
-        except Exception as e:
-            logger.warning(f"Error closing browser: {e}")
+            self._force_kill_firefox()
+
+    def _force_kill_firefox(self) -> None:
+
+        if not self._profile_path:
+            return
+        import subprocess
+        try:
+            # Ищем процесс camoufox с нашим profile path
+            result = subprocess.run(
+                ["pgrep", "-f", self._profile_path],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            pids = result.stdout.strip().split('\n')
+            for pid in pids:
+                if pid.strip():
+                    subprocess.run(
+                        ["kill", "-9", pid.strip()],
+                        capture_output=True,
+                        timeout=5,
+                    )
+                    logger.debug(
+                        f"Force killed Firefox pid={pid.strip()} "
+                        f"for {self._profile_path}"
+                    )
+        except Exception:
+            pass
 
     def fetch(self, url: str) -> Optional[str]:
         """Загружает страницу. Возвращает HTML или None если заблокированы."""
@@ -160,12 +190,6 @@ class BrowserSession:
         return html
 
     def _warmup(self) -> bool:
-        """
-        Прогрев сессии:
-        1. Посещаем нейтральные сайты
-        2. Заходим на галерею platesmania
-        3. Если KillBot — выполняем drag-bypass слайдера
-        """
         if stop_event.is_set():
             return False
 

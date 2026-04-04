@@ -267,14 +267,18 @@ class WorkerPool:
             profile_path: str,
             consecutive_blocks: int,
         ) -> dict:
-            """
-            Одна браузерная сессия для части диапазона.
-            При 5 блокировках подряд — меняет профиль.
-            При fatal ошибке (browser мёртв) — немедленный break.
-            Возвращает crashed=True если сессия упала.
-            """
+            """..."""
             crashed = False
             browser_dead = False
+
+            import asyncio
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    asyncio.set_event_loop(None)
+            except RuntimeError:
+                pass
+            asyncio.set_event_loop(None)
 
             try:
                 with BrowserSession(task.country, profile_path) as session:
@@ -303,9 +307,6 @@ class WorkerPool:
                                         task.worker_id, profile_path
                                     )
                                     consecutive_blocks = 0
-                                    # Профиль сменён, но browser старый —
-                                    # нужно завершить сессию чтобы следующий
-                                    # retry создал browser с новым профилем
                                     break
                                 continue
 
