@@ -485,6 +485,9 @@ def _scrape_one(
         logger.error("_scrape_one called with country='all' — bug!")
         return
 
+    # Убиваем zombie Firefox процессы перед стартом новой страны
+    _kill_zombie_firefox()
+
     if auto:
         try:
             from core.range_detector import detect_range
@@ -498,12 +501,43 @@ def _scrape_one(
             start_id = 1
             end_id = 100_000
 
+    # Проверяем checkpoint — если уже спарсили дальше end_id,
+    # пропускаем страну чтобы не крутиться впустую
+    if not fresh:
+        from utils.checkpoint import load_checkpoint
+        saved_checkpoint = load_checkpoint(country, start_id)
+        if saved_checkpoint >= end_id:
+            logger.info(
+                f"Country {country}: checkpoint {saved_checkpoint} >= "
+                f"end_id {end_id} — already done, skipping"
+            )
+            return
+
+    # Считаем записи ДО парсинга для отчёта
+    count_before = sync_get_count(country)
+
     try:
         if workers > 1:
             from core.profile_manager import ProfileManager
             from core.worker_pool import WorkerPool
-            manager = ProfileManager(count=workers)
+
+            # Создаём ProfileManager с достаточным количеством профилей.
+            # Минимум workers, но не меньше 10 чтобы был запас.
+            manager = ProfileManager(count=max(workers, 10))
+
+            # ВСЕГДА сбрасываем заблокированные профили перед стартом.
+            # Профили блокируются из-за дубликатов и timeout'ов,
+            # не из-за реальной блокировки сайтом.
+            # При каждой новой стране начинаем с чистого состояния.
+            manager._reset_all_blocked()
             manager.ensure_ready()
+
+            stats = manager.get_stats()
+            logger.info(
+                f"Country {country}: {stats['available']} profiles "
+                f"available for {workers} workers"
+            )
+
             pool = WorkerPool(manager, _progress_queue)
             pool.run(
                 country=country,
@@ -523,6 +557,33 @@ def _scrape_one(
     except Exception as e:
         logger.error(f"Error scraping {country}: {e}")
 
+    # Отчёт по стране
+    count_after = sync_get_count(country)
+    new_records = count_after - count_before
+    logger.info(
+        f"=== Country {country.upper()} done: "
+        f"total in DB={count_after}, "
+        f"new this session={new_records} ==="
+    )
+
+
+def _kill_zombie_firefox() -> None:
+    """
+    Убивает zombie/orphan Firefox (camoufox) процессы.
+    Вызывается перед стартом каждой страны чтобы
+    не накапливались мёртвые процессы.
+    """
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["pkill", "-f", "camoufox-bin"],
+            capture_output=True,
+            timeout=10,
+        )
+        if result.returncode == 0:
+            logger.info("Killed orphan camoufox processes")
+    except Exception as e:
+        logger.debug(f"pkill camoufox: {e}")
 
 # ─── SIGTERM handler для systemd ──────────────────────────────────────────────
 

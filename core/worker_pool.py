@@ -433,46 +433,78 @@ class WorkerPool:
             pass
 
     def _split_range(
-        self,
-        country: str,
-        start_id: int,
-        end_id: int,
-        workers: int,
-    ) -> list[ScrapeTask]:
-        """
-        Делит диапазон ID на равные части между воркерами.
-        Каждому воркеру назначается свой профиль.
-        """
-        total = end_id - start_id + 1
-        chunk = max(1, total // workers)
-        tasks = []
-
-        for i in range(workers):
-            chunk_start = start_id + i * chunk
-            chunk_end = (
-                chunk_start + chunk - 1 if i < workers - 1 else end_id
-            )
-            profile_path = self._manager.get_next_profile()
-
-            if not profile_path:
-                logger.error(
-                    f"No profile for worker {i} — stopping split"
+            self,
+            country: str,
+            start_id: int,
+            end_id: int,
+            workers: int,
+        ) -> list[ScrapeTask]:
+            """
+            Делит диапазон ID между воркерами.
+            Количество воркеров ограничено числом доступных профилей —
+            два воркера с одним профилем = lock файл Firefox = crash.
+            """
+            # Не создавать больше воркеров чем профилей
+            available_profiles = self._manager.get_stats()["available"]
+            if workers > available_profiles:
+                logger.warning(
+                    f"Requested {workers} workers but only "
+                    f"{available_profiles} profiles available — "
+                    f"reducing to {available_profiles}"
                 )
-                break
+                workers = available_profiles
 
-            tasks.append(ScrapeTask(
-                worker_id=i,
-                country=country,
-                start_id=chunk_start,
-                end_id=chunk_end,
-                profile_path=profile_path,
-            ))
-            logger.debug(
-                f"Worker {i}: range={chunk_start}..{chunk_end}, "
-                f"profile={_profile_name(profile_path)}"
-            )
+            if workers <= 0:
+                logger.error("No available profiles — cannot start")
+                return []
 
-        return tasks
+            total = end_id - start_id + 1
+            chunk = max(1, total // workers)
+            tasks = []
+
+            # Собираем уникальные профили для каждого воркера
+            used_profiles: set[str] = set()
+
+            for i in range(workers):
+                chunk_start = start_id + i * chunk
+                chunk_end = (
+                    chunk_start + chunk - 1
+                    if i < workers - 1
+                    else end_id
+                )
+                profile_path = self._manager.get_next_profile()
+
+                if not profile_path:
+                    logger.error(
+                        f"No profile for worker {i} — stopping split"
+                    )
+                    break
+
+                # Защита от дубликатов: если профиль уже выдан
+                # другому воркеру — пропускаем
+                if profile_path in used_profiles:
+                    logger.warning(
+                        f"Profile {_profile_name(profile_path)} "
+                        f"already assigned — skipping worker {i}"
+                    )
+                    continue
+
+                used_profiles.add(profile_path)
+
+                tasks.append(ScrapeTask(
+                    worker_id=i,
+                    country=country,
+                    start_id=chunk_start,
+                    end_id=chunk_end,
+                    profile_path=profile_path,
+                ))
+                logger.debug(
+                    f"Worker {i}: "
+                    f"range={chunk_start}..{chunk_end}, "
+                    f"profile={_profile_name(profile_path)}"
+                )
+
+            return tasks
 
 
 # ─── Утилиты ──────────────────────────────────────────────────────────────────
