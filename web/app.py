@@ -472,99 +472,88 @@ def _run_scraper_sync(
         )
 
 
-def _scrape_one(
-    country: str,
-    workers: int,
-    fresh: bool,
-    auto: bool,
-    start_id: int,
-    end_id: int,
-) -> None:
-    """Парсит одну страну — выбирает single/multi-thread режим."""
-    if country == "all":
-        logger.error("_scrape_one called with country='all' — bug!")
-        return
-
-    # Убиваем zombie Firefox процессы перед стартом новой страны
-    _kill_zombie_firefox()
-
-    if auto:
-        try:
-            from core.range_detector import detect_range
-            start_id, end_id = detect_range(country)
-            logger.info(f"Auto range {country}: {start_id}..{end_id}")
-        except Exception as e:
-            logger.warning(
-                f"Auto-detect failed for {country}: {e} "
-                f"— using defaults"
-            )
-            start_id = 1
-            end_id = 100_000
-
-    # Проверяем checkpoint — если уже спарсили дальше end_id,
-    # пропускаем страну чтобы не крутиться впустую
-    if not fresh:
-        from utils.checkpoint import load_checkpoint
-        saved_checkpoint = load_checkpoint(country, start_id)
-        if saved_checkpoint >= end_id:
-            logger.info(
-                f"Country {country}: checkpoint {saved_checkpoint} >= "
-                f"end_id {end_id} — already done, skipping"
-            )
+    def _scrape_one(
+        country: str,
+        workers: int,
+        fresh: bool,
+        auto: bool,
+        start_id: int,
+        end_id: int,
+    ) -> None:
+        """Парсит одну страну."""
+        if country == "all":
+            logger.error("_scrape_one called with country='all' — bug!")
             return
 
-    # Считаем записи ДО парсинга для отчёта
-    count_before = sync_get_count(country)
+        _kill_zombie_firefox()
 
-    try:
-        if workers > 1:
-            from core.profile_manager import ProfileManager
-            from core.worker_pool import WorkerPool
+        # ── Определяем диапазон ──────────────────────────────────────────────
+        # auto=True: detect_range ВСЕГДА вызывается первым — до checkpoint.
+        # Иначе страны с checkpoint > дефолтного end_id=100_000 пропускаются.
+        if auto:
+            try:
+                from core.range_detector import detect_range
+                start_id, end_id = detect_range(country)
+                logger.info(f"Auto range {country}: {start_id}..{end_id}")
+            except Exception as e:
+                logger.warning(f"Auto-detect failed for {country}: {e} — using defaults")
+                start_id = 1
+                end_id = 100_000
 
-            # Создаём ProfileManager с достаточным количеством профилей.
-            # Минимум workers, но не меньше 10 чтобы был запас.
-            manager = ProfileManager(count=max(workers, 10))
+        # ── Проверяем checkpoint ─────────────────────────────────────────────
+        # Только после определения реального end_id.
+        if not fresh:
+            from utils.checkpoint import load_checkpoint
+            saved_checkpoint = load_checkpoint(country, start_id)
+            if saved_checkpoint >= end_id:
+                logger.info(
+                    f"Country {country}: checkpoint {saved_checkpoint} >= "
+                    f"end_id {end_id} — already done, skipping"
+                )
+                return
 
-            # ВСЕГДА сбрасываем заблокированные профили перед стартом.
-            # Профили блокируются из-за дубликатов и timeout'ов,
-            # не из-за реальной блокировки сайтом.
-            # При каждой новой стране начинаем с чистого состояния.
-            manager._reset_all_blocked()
-            manager.ensure_ready()
+        count_before = sync_get_count(country)
 
-            stats = manager.get_stats()
-            logger.info(
-                f"Country {country}: {stats['available']} profiles "
-                f"available for {workers} workers"
-            )
+        try:
+            if workers > 1:
+                from core.profile_manager import ProfileManager
+                from core.worker_pool import WorkerPool
 
-            pool = WorkerPool(manager, _progress_queue)
-            pool.run(
-                country=country,
-                start_id=start_id,
-                end_id=end_id,
-                workers=workers,
-                resume=not fresh,
-            )
-        else:
-            from core.scraper import scrape_range
-            scrape_range(
-                country=country,
-                start_id=start_id,
-                end_id=end_id,
-                resume=not fresh,
-            )
-    except Exception as e:
-        logger.error(f"Error scraping {country}: {e}")
+                manager = ProfileManager(count=max(workers, 10))
+                manager._reset_all_blocked()
+                manager.ensure_ready()
 
-    # Отчёт по стране
-    count_after = sync_get_count(country)
-    new_records = count_after - count_before
-    logger.info(
-        f"=== Country {country.upper()} done: "
-        f"total in DB={count_after}, "
-        f"new this session={new_records} ==="
-    )
+                stats = manager.get_stats()
+                logger.info(
+                    f"Country {country}: {stats['available']} profiles "
+                    f"for {workers} workers"
+                )
+
+                pool = WorkerPool(manager, _progress_queue)
+                pool.run(
+                    country=country,
+                    start_id=start_id,
+                    end_id=end_id,
+                    workers=workers,
+                    resume=not fresh,
+                )
+            else:
+                from core.scraper import scrape_range
+                scrape_range(
+                    country=country,
+                    start_id=start_id,
+                    end_id=end_id,
+                    resume=not fresh,
+                )
+        except Exception as e:
+            logger.error(f"Error scraping {country}: {e}")
+
+        count_after = sync_get_count(country)
+        logger.info(
+            f"=== Country {country.upper()} done: "
+            f"total in DB={count_after}, "
+            f"new this session={count_after - count_before} ==="
+        )
 
 
 def _kill_zombie_firefox() -> None:

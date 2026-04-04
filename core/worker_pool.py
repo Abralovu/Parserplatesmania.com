@@ -1,7 +1,6 @@
 import os
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from queue import Queue
 from typing import Optional
@@ -19,22 +18,17 @@ logger = get_logger(__name__)
 
 # ─── Константы ────────────────────────────────────────────────────────────────
 
-# Пауза между запусками воркеров (секунды).
-# 8 одновременных Camoufox.start() = malloc corruption → segfault.
-# Stagger даёт каждому Firefox время запуститься и выделить память.
+# Задержка между запусками воркеров — предотвращает одновременный
+# malloc нескольких Firefox процессов (segfault при 8+ одновременных).
 _STAGGER_DELAY_S = 5
 
-# Максимум retry при crash одного блока SESSION_SIZE.
-# После исчерпания — воркер пропускает блок и идёт к следующему.
+# Максимум retry для одного блока SESSION_SIZE.
 _MAX_SESSION_RETRIES = 3
 
-# Если N блоков подряд crash — поток сломан, нет смысла продолжать.
-# (asyncio loop заражён, или системная проблема)
+# Если N блоков подряд упали — поток сломан, останавливаем воркер.
 _MAX_CONSECUTIVE_FAILURES = 5
 
-# Ошибки при которых текущая сессия должна немедленно завершиться.
-# Browser мёртв — продолжать fetch бессмысленно, только спамит ошибки
-# и блокирует профили.
+# Ошибки при которых browser мёртв и продолжать fetch бессмысленно.
 _FATAL_SESSION_ERRORS = (
     "browser has been closed",
     "target page, context or browser",
@@ -44,19 +38,17 @@ _FATAL_SESSION_ERRORS = (
 
 @dataclass
 class WorkerProgress:
-    """Прогресс одного воркера — передаётся в веб-панель через Queue."""
+    """Прогресс одного воркера для веб-панели."""
     worker_id: int
     processed: int
     saved: int
     current_id: int
-    is_blocked: bool = False
     is_done: bool = False
-    error: Optional[str] = None
 
 
 @dataclass
 class ScrapeTask:
-    """Задача для одного воркера — диапазон ID и профиль."""
+    """Задача одного воркера — диапазон ID и профиль."""
     worker_id: int
     country: str
     start_id: int
@@ -65,15 +57,6 @@ class ScrapeTask:
 
 
 class WorkerPool:
-    """
-    Управляет пулом потоков-парсеров.
-    Каждый поток = отдельный Camoufox профиль = отдельный диапазон ID.
-
-    Использование:
-        pool = WorkerPool(profile_manager, progress_queue)
-        pool.run(country='ru', start_id=31000000, end_id=32000000, workers=3)
-    """
-
     def __init__(
         self,
         profile_manager: ProfileManager,
@@ -91,7 +74,7 @@ class WorkerPool:
         resume: bool = True,
     ) -> dict:
         """
-        Запускает N потоков для парсинга диапазона ID.
+        Запускает N воркеров для парсинга диапазона ID.
         Возвращает итоговую статистику.
         """
         actual_start = load_checkpoint(country, start_id) if resume else start_id
@@ -108,20 +91,28 @@ class WorkerPool:
         )
 
         stats = {"processed": 0, "saved": 0, "workers": len(tasks)}
+        results: dict[int, dict] = {}
+        results_lock = threading.Lock()
 
-        with ThreadPoolExecutor(max_workers=len(tasks)) as executor:
-            futures = {
-                executor.submit(self._run_worker, task): task
-                for task in tasks
-            }
-            for future in as_completed(futures):
-                task = futures[future]
-                try:
-                    result = future.result()
-                    stats["processed"] += result["processed"]
-                    stats["saved"] += result["saved"]
-                except Exception as e:
-                    logger.error(f"Worker {task.worker_id} failed: {e}")
+        def run_and_collect(task: ScrapeTask) -> None:
+            result = self._run_worker(task)
+            with results_lock:
+                results[task.worker_id] = result
+
+        threads = [
+            threading.Thread(target=run_and_collect, args=(task,), daemon=True)
+            for task in tasks
+        ]
+
+        for t in threads:
+            t.start()
+
+        for t in threads:
+            t.join()
+
+        for result in results.values():
+            stats["processed"] += result["processed"]
+            stats["saved"] += result["saved"]
 
         total_in_db = sync_get_count(country)
         logger.info(
@@ -134,24 +125,16 @@ class WorkerPool:
 
     def _run_worker(self, task: ScrapeTask) -> dict:
         """
-        Один воркер — парсит свой диапазон ID.
+        Один воркер — парсит свой диапазон ID блоками по SESSION_SIZE.
 
-        Staggered start: ждёт worker_id * _STAGGER_DELAY_S секунд
-        перед запуском — предотвращает segfault от одновременного
-        malloc в 8 Firefox процессах.
-
-        При crash сессии — retry до _MAX_SESSION_RETRIES на блок.
-        При _MAX_CONSECUTIVE_FAILURES подряд — воркер останавливается
-        (поток сломан, нет смысла продолжать).
+        Каждый блок запускается в одноразовом threading.Thread.
+        Поток живёт ровно одну BrowserSession, потом уничтожается.
+        Это гарантирует чистое thread-local состояние — никакого
+        asyncio loop мусора от Playwright предыдущей сессии.
         """
-        # ── Stagger delay ──
-        # Воркер 0 стартует сразу, воркер 1 через 5с, воркер 7 через 35с.
-        # Пауза разбита на 1-секундные шаги чтобы stop_event реагировал.
         if task.worker_id > 0:
             stagger = task.worker_id * _STAGGER_DELAY_S
-            logger.info(
-                f"Worker {task.worker_id}: waiting {stagger}s (stagger)"
-            )
+            logger.info(f"Worker {task.worker_id}: stagger {stagger}s")
             for _ in range(stagger):
                 if stop_event.is_set():
                     return {"processed": 0, "saved": 0}
@@ -161,8 +144,7 @@ class WorkerPool:
         saved = 0
         batch: list = []
         profile_path = task.profile_path
-        consecutive_blocks = 0
-        consecutive_failures = 0  # Счётчик подряд упавших блоков
+        consecutive_failures = 0
 
         logger.info(
             f"Worker {task.worker_id}: "
@@ -170,62 +152,68 @@ class WorkerPool:
             f"profile={_profile_name(profile_path)}"
         )
 
-        for session_start in range(
-            0, task.end_id - task.start_id + 1, SESSION_SIZE
-        ):
+        session_starts = range(0, task.end_id - task.start_id + 1, SESSION_SIZE)
+
+        for session_offset in session_starts:
             if stop_event.is_set():
                 break
 
-            # Если поток сломан — выходим
             if consecutive_failures >= _MAX_CONSECUTIVE_FAILURES:
                 logger.error(
                     f"Worker {task.worker_id}: {consecutive_failures} "
-                    f"consecutive failures — stopping worker"
+                    f"consecutive failures — stopping"
                 )
                 break
 
-            session_ids = list(
-                range(
-                    task.start_id + session_start,
-                    min(
-                        task.start_id + session_start + SESSION_SIZE,
-                        task.end_id + 1,
-                    ),
-                )
-            )
+            session_ids = list(range(
+                task.start_id + session_offset,
+                min(task.start_id + session_offset + SESSION_SIZE, task.end_id + 1),
+            ))
 
-            # ── Retry loop для одного блока ──
             session_ok = False
+
             for retry in range(_MAX_SESSION_RETRIES):
                 if stop_event.is_set():
                     break
 
-                result = self._run_session(
-                    task=task,
-                    session_ids=session_ids,
-                    batch=batch,
-                    processed=processed,
-                    saved=saved,
-                    profile_path=profile_path,
-                    consecutive_blocks=consecutive_blocks,
+                # ── Ключевое решение ──────────────────────────────────────
+                # Каждая BrowserSession запускается в новом одноразовом
+                # потоке. После завершения поток уничтожается вместе
+                # с thread-local состоянием Playwright.
+                # Следующий блок получает абсолютно чистый поток —
+                # asyncio loop мусора нет.
+                # ---------------------------------------------------------
+                result_container: dict = {}
+                session_thread = threading.Thread(
+                    target=self._run_session_in_thread,
+                    args=(task, session_ids, batch, processed, saved,
+                          profile_path, result_container),
+                    daemon=True,
                 )
+                session_thread.start()
+                session_thread.join()
 
-                processed = result["processed"]
-                saved = result["saved"]
-                batch = result["batch"]
-                consecutive_blocks = result["consecutive_blocks"]
-                profile_path = result["profile_path"]
+                if not result_container:
+                    logger.error(
+                        f"Worker {task.worker_id}: session thread "
+                        f"returned no result"
+                    )
+                    continue
 
-                if not result["crashed"]:
+                processed = result_container["processed"]
+                saved = result_container["saved"]
+                batch = result_container["batch"]
+                profile_path = result_container["profile_path"]
+
+                if not result_container["crashed"]:
                     session_ok = True
                     break
 
-                # Retry с логом
                 if retry < _MAX_SESSION_RETRIES - 1:
                     logger.warning(
-                        f"Worker {task.worker_id}: session retry "
+                        f"Worker {task.worker_id}: retry "
                         f"{retry + 1}/{_MAX_SESSION_RETRIES} "
-                        f"for block {session_ids[0]}..{session_ids[-1]}"
+                        f"block {session_ids[0]}..{session_ids[-1]}"
                     )
 
             if session_ok:
@@ -235,17 +223,15 @@ class WorkerPool:
                 if not stop_event.is_set():
                     logger.error(
                         f"Worker {task.worker_id}: block "
-                        f"{session_ids[0]}..{session_ids[-1]} failed "
-                        f"after {_MAX_SESSION_RETRIES} retries — skipping"
+                        f"{session_ids[0]}..{session_ids[-1]} "
+                        f"failed after {_MAX_SESSION_RETRIES} retries — skipping"
                     )
 
         # Финальный flush батча
         if batch:
             count = sync_save_batch(batch)
             saved += count
-            logger.info(
-                f"Worker {task.worker_id}: final batch saved {count}"
-            )
+            logger.info(f"Worker {task.worker_id}: final flush {count} records")
 
         self._report_progress(WorkerProgress(
             worker_id=task.worker_id,
@@ -257,259 +243,207 @@ class WorkerPool:
 
         return {"processed": processed, "saved": saved}
 
-    def _run_session(
-            self,
-            task: ScrapeTask,
-            session_ids: list,
-            batch: list,
-            processed: int,
-            saved: int,
-            profile_path: str,
-            consecutive_blocks: int,
-        ) -> dict:
-            """..."""
-            crashed = False
-            browser_dead = False
+    def _run_session_in_thread(
+        self,
+        task: ScrapeTask,
+        session_ids: list,
+        batch: list,
+        processed: int,
+        saved: int,
+        profile_path: str,
+        result_container: dict,
+    ) -> None:
+        """
+        Запускает одну BrowserSession в изолированном потоке.
 
-            import asyncio
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    asyncio.set_event_loop(None)
-            except RuntimeError:
-                pass
-            asyncio.set_event_loop(None)
+        Поток одноразовый — создаётся для одного блока SESSION_SIZE
+        и уничтожается после. Thread-local Playwright состояние
+        уничтожается вместе с потоком.
 
-            try:
-                with BrowserSession(task.country, profile_path) as session:
-                    for pid in session_ids:
-                        if stop_event.is_set():
+        Результат пишется в result_container (dict передан по ссылке).
+        """
+        crashed = False
+        browser_dead = False
+        consecutive_blocks = 0
+
+        try:
+            with BrowserSession(task.country, profile_path) as session:
+                for pid in session_ids:
+                    if stop_event.is_set():
+                        break
+
+                    try:
+                        if sync_id_exists(pid):
+                            processed += 1
+                            continue
+
+                        html = session.fetch(f"{BASE_URL}/{task.country}/nomer{pid}")
+
+                        if not html:
+                            consecutive_blocks += 1
+                            processed += 1
+                            if consecutive_blocks >= 5:
+                                profile_path = self._handle_profile_block(
+                                    task.worker_id, profile_path
+                                )
+                                consecutive_blocks = 0
+                                break
+                            continue
+
+                        consecutive_blocks = 0
+                        record = parse_plate_page(html, pid, task.country)
+
+                        if record:
+                            local = download_photo(record.photo_url, pid, task.country)
+                            record.local_path = local
+                            batch.append(record)
+
+                        processed += 1
+
+                        if processed % CHECKPOINT_EVERY == 0:
+                            count = sync_save_batch(batch)
+                            saved += count
+                            batch.clear()
+                            save_checkpoint(pid, task.country)
+                            self._report_progress(WorkerProgress(
+                                worker_id=task.worker_id,
+                                processed=processed,
+                                saved=saved,
+                                current_id=pid,
+                            ))
                             logger.info(
                                 f"Worker {task.worker_id}: "
-                                f"stop signal received"
-                            )
-                            break
-
-                        try:
-                            if sync_id_exists(pid):
-                                processed += 1
-                                continue
-
-                            html = session.fetch(
-                                f"{BASE_URL}/{task.country}/nomer{pid}"
+                                f"processed={processed} saved={saved} id={pid}"
                             )
 
-                            if not html:
-                                consecutive_blocks += 1
-                                processed += 1
-                                if consecutive_blocks >= 5:
-                                    profile_path = self._handle_profile_block(
-                                        task.worker_id, profile_path
-                                    )
-                                    consecutive_blocks = 0
-                                    break
-                                continue
+                    except ConnectionError as e:
+                        logger.warning(
+                            f"Worker {task.worker_id}: KillBot id={pid}: {e}"
+                        )
+                        processed += 1
 
-                            consecutive_blocks = 0
-                            record = parse_plate_page(html, pid, task.country)
-
-                            if record:
-                                local = download_photo(
-                                    record.photo_url, pid, task.country
-                                )
-                                record.local_path = local
-                                batch.append(record)
-
-                            processed += 1
-
-                            if processed % CHECKPOINT_EVERY == 0:
-                                count = sync_save_batch(batch)
-                                saved += count
-                                batch.clear()
-                                save_checkpoint(pid, task.country)
-                                self._report_progress(WorkerProgress(
-                                    worker_id=task.worker_id,
-                                    processed=processed,
-                                    saved=saved,
-                                    current_id=pid,
-                                ))
-                                logger.info(
-                                    f"Worker {task.worker_id}: "
-                                    f"processed={processed} saved={saved} "
-                                    f"id={pid}"
-                                )
-
-                        except ConnectionError as e:
-                            logger.warning(
-                                f"Worker {task.worker_id}: "
-                                f"KillBot id={pid}: {e}"
-                            )
-                            processed += 1
-                            continue
-                        except Exception as e:
-                            err_msg = str(e).lower()
-                            # Browser мёртв — нет смысла продолжать fetch
-                            if any(f in err_msg for f in _FATAL_SESSION_ERRORS):
-                                logger.error(
-                                    f"Worker {task.worker_id}: "
-                                    f"browser dead at id={pid}: {e} "
-                                    f"— ending session"
-                                )
-                                browser_dead = True
-                                break
+                    except Exception as e:
+                        err_lower = str(e).lower()
+                        if any(f in err_lower for f in _FATAL_SESSION_ERRORS):
                             logger.error(
-                                f"Worker {task.worker_id}: "
-                                f"failed id={pid}: {e}"
+                                f"Worker {task.worker_id}: browser dead "
+                                f"id={pid}: {e}"
                             )
-                            processed += 1
-                            continue
+                            browser_dead = True
+                            break
+                        logger.error(
+                            f"Worker {task.worker_id}: failed id={pid}: {e}"
+                        )
+                        processed += 1
 
-            except Exception as e:
-                logger.error(
-                    f"Worker {task.worker_id}: session crashed: {e}"
-                )
-                crashed = True
+        except Exception as e:
+            logger.error(f"Worker {task.worker_id}: session crashed: {e}")
+            crashed = True
 
-            # browser_dead = break изнутри with (browser умер).
-            # Нужен retry чтобы создать свежий browser.
-            if browser_dead:
-                crashed = True
+        if browser_dead:
+            crashed = True
 
-            # При любом crash — сохраняем batch и даём паузу
-            if crashed:
-                if batch:
-                    sync_save_batch(batch)
-                    batch.clear()
-                time.sleep(5)
+        if crashed and batch:
+            sync_save_batch(batch)
+            batch.clear()
+            time.sleep(5)
 
-            return {
-                "processed": processed,
-                "saved": saved,
-                "batch": batch,
-                "consecutive_blocks": consecutive_blocks,
-                "profile_path": profile_path,
-                "crashed": crashed,
-            }
+        result_container.update({
+            "processed": processed,
+            "saved": saved,
+            "batch": batch,
+            "profile_path": profile_path,
+            "crashed": crashed,
+        })
 
     def _handle_profile_block(self, worker_id: int, current_path: str) -> str:
         """
-        Обрабатывает блокировку профиля.
-        Пауза 5 минут разбита на 1-секундные интервалы —
-        stop_event проверяется на каждой итерации.
+        Профиль заблокирован — берём следующий.
+        Если свободных нет — ждём до 5 минут с проверкой stop_event.
         """
-        logger.warning(
-            f"Worker {worker_id}: 5 consecutive blocks — "
-            f"switching profile"
-        )
+        logger.warning(f"Worker {worker_id}: 5 blocks — switching profile")
         self._manager.mark_blocked(current_path)
         new_path = self._manager.get_next_profile()
 
         if new_path:
             logger.info(
-                f"Worker {worker_id}: switched to "
-                f"{_profile_name(new_path)}"
+                f"Worker {worker_id}: switched to {_profile_name(new_path)}"
             )
             return new_path
 
-        logger.error(
-            f"Worker {worker_id}: no profiles available — "
-            f"pausing up to 5min"
-        )
-
+        logger.error(f"Worker {worker_id}: no profiles — pausing 5min")
         for _ in range(300):
             if stop_event.is_set():
-                logger.info(
-                    f"Worker {worker_id}: stop signal during pause"
-                )
                 break
             time.sleep(1)
 
         return current_path
 
     def _report_progress(self, progress: WorkerProgress) -> None:
-        """Отправляет прогресс в Queue — веб-панель читает оттуда."""
         try:
             self._progress_queue.put_nowait(progress)
         except Exception:
             pass
 
     def _split_range(
-            self,
-            country: str,
-            start_id: int,
-            end_id: int,
-            workers: int,
-        ) -> list[ScrapeTask]:
-            """
-            Делит диапазон ID между воркерами.
-            Количество воркеров ограничено числом доступных профилей —
-            два воркера с одним профилем = lock файл Firefox = crash.
-            """
-            # Не создавать больше воркеров чем профилей
-            available_profiles = self._manager.get_stats()["available"]
-            if workers > available_profiles:
-                logger.warning(
-                    f"Requested {workers} workers but only "
-                    f"{available_profiles} profiles available — "
-                    f"reducing to {available_profiles}"
-                )
-                workers = available_profiles
+        self,
+        country: str,
+        start_id: int,
+        end_id: int,
+        workers: int,
+    ) -> list[ScrapeTask]:
+        """
+        Делит диапазон ID между воркерами.
+        Количество воркеров ≤ количества доступных профилей.
+        Каждый воркер получает уникальный профиль.
+        """
+        available_profiles = self._manager.get_stats()["available"]
+        if workers > available_profiles:
+            logger.warning(
+                f"Reducing workers {workers} → {available_profiles} "
+                f"(profile limit)"
+            )
+            workers = available_profiles
 
-            if workers <= 0:
-                logger.error("No available profiles — cannot start")
-                return []
+        if workers <= 0:
+            logger.error("No available profiles")
+            return []
 
-            total = end_id - start_id + 1
-            chunk = max(1, total // workers)
-            tasks = []
+        total = end_id - start_id + 1
+        chunk = max(1, total // workers)
+        tasks = []
+        used_profiles: set[str] = set()
 
-            # Собираем уникальные профили для каждого воркера
-            used_profiles: set[str] = set()
+        for i in range(workers):
+            chunk_start = start_id + i * chunk
+            chunk_end = chunk_start + chunk - 1 if i < workers - 1 else end_id
 
-            for i in range(workers):
-                chunk_start = start_id + i * chunk
-                chunk_end = (
-                    chunk_start + chunk - 1
-                    if i < workers - 1
-                    else end_id
-                )
-                profile_path = self._manager.get_next_profile()
+            profile_path = self._manager.get_next_profile()
+            if not profile_path:
+                logger.error(f"No profile for worker {i} — stopping")
+                break
 
-                if not profile_path:
-                    logger.error(
-                        f"No profile for worker {i} — stopping split"
-                    )
-                    break
+            if profile_path in used_profiles:
+                logger.warning(f"Duplicate profile for worker {i} — skipping")
+                continue
 
-                # Защита от дубликатов: если профиль уже выдан
-                # другому воркеру — пропускаем
-                if profile_path in used_profiles:
-                    logger.warning(
-                        f"Profile {_profile_name(profile_path)} "
-                        f"already assigned — skipping worker {i}"
-                    )
-                    continue
+            used_profiles.add(profile_path)
+            tasks.append(ScrapeTask(
+                worker_id=i,
+                country=country,
+                start_id=chunk_start,
+                end_id=chunk_end,
+                profile_path=profile_path,
+            ))
+            logger.debug(
+                f"Worker {i}: range={chunk_start}..{chunk_end}, "
+                f"profile={_profile_name(profile_path)}"
+            )
 
-                used_profiles.add(profile_path)
-
-                tasks.append(ScrapeTask(
-                    worker_id=i,
-                    country=country,
-                    start_id=chunk_start,
-                    end_id=chunk_end,
-                    profile_path=profile_path,
-                ))
-                logger.debug(
-                    f"Worker {i}: "
-                    f"range={chunk_start}..{chunk_end}, "
-                    f"profile={_profile_name(profile_path)}"
-                )
-
-            return tasks
+        return tasks
 
 
 # ─── Утилиты ──────────────────────────────────────────────────────────────────
 
 def _profile_name(path: str) -> str:
-    """Короткое имя профиля для логов."""
     return os.path.basename(path) if path else "unknown"

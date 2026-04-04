@@ -114,23 +114,32 @@ class BrowserSession:
 
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-            if exc_type is not None:
-                logger.error(
-                    f"Session exiting with error: "
-                    f"{exc_type.__name__}: {exc_val}"
-                )
-            try:
-                if self._page and not self._page.is_closed():
-                    self._page.close()
-            except Exception as e:
-                logger.warning(f"Error closing page: {e}")
-            try:
-                if self._browser:
-                    self._browser.close()
-            except Exception as e:
-                logger.warning(f"Error closing browser: {e}")
+        if exc_type is not None:
+            logger.error(
+                f"Session exiting with error: "
+                f"{exc_type.__name__}: {exc_val}"
+            )
+        try:
+            if self._page and not self._page.is_closed():
+                self._page.close()
+        except Exception as e:
+            logger.warning(f"Error closing page: {e}")
+        try:
+            if self._browser:
+                self._browser.close()
+        except Exception as e:
+            logger.warning(f"Error closing browser: {e}")
 
-            self._force_kill_firefox()
+        self._force_kill_firefox()
+        
+        import asyncio
+        try:
+            loop = asyncio.get_event_loop()
+            if not loop.is_closed():
+                loop.close()
+        except Exception:
+            pass
+        asyncio.set_event_loop(None)
 
     def _force_kill_firefox(self) -> None:
 
