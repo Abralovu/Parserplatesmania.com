@@ -270,15 +270,9 @@ async def reset_all(body: ResetRequest) -> dict:
 
     targets = [
         ("DB", lambda: os.remove(DB_PATH)),
-        ("Photos", lambda: shutil.rmtree(
-            os.path.join(OUTPUT_DIR, "photos")
-        )),
-        ("Checkpoint", lambda: os.remove(
-            os.path.join(OUTPUT_DIR, "checkpoint.json")
-        )),
-        ("Profiles", lambda: shutil.rmtree(
-            os.path.join(OUTPUT_DIR, "profiles")
-        )),
+        ("Photos", lambda: shutil.rmtree(os.path.join(OUTPUT_DIR, "photos"))),
+        ("Checkpoint", lambda: os.remove(os.path.join(OUTPUT_DIR, "checkpoint.json"))),
+        ("Profiles", lambda: shutil.rmtree(os.path.join(OUTPUT_DIR, "profiles"))),
     ]
 
     for label, action in targets:
@@ -348,19 +342,13 @@ async def websocket_progress(websocket: WebSocket) -> None:
         logger.info("WebSocket client disconnected")
 
 
-# ─── Утилиты для подсчёта записей ─────────────────────────────────────────────
+# ─── Утилиты ──────────────────────────────────────────────────────────────────
 
 def _get_total_count(country: str) -> int:
-    """
-    Считает записи в БД. Для 'all' — сумма по всем странам.
-    Используется для вычисления saved в истории сессий.
-    """
     if country == "all":
         return sum(sync_get_count(c) for c in _ALL_COUNTRIES)
     return sync_get_count(country)
 
-
-# ─── Сохранение истории ───────────────────────────────────────────────────────
 
 def _save_session_to_history(
     country: str,
@@ -370,10 +358,6 @@ def _save_session_to_history(
     finished_at: str,
     stopped_manually: bool,
 ) -> None:
-    """
-    Сохраняет сессию в history.json.
-    Lock защищает от race condition при парсинге "Все страны".
-    """
     os.makedirs(os.path.dirname(_HISTORY_FILE), exist_ok=True)
 
     with _history_lock:
@@ -413,28 +397,18 @@ def _run_scraper_sync(
     start_id: int,
     end_id: int,
 ) -> None:
-    """
-    Точка входа для daemon thread.
-    Итерирует по странам (или одна страна), вызывает _scrape_one.
-    """
     with _state_lock:
         started_at = (
-            _scrape_state.get("started_at")
-            or datetime.utcnow().isoformat()
+            _scrape_state.get("started_at") or datetime.utcnow().isoformat()
         )
 
-    # Запоминаем count ДО парсинга.
-    # В историю попадёт разница (только новые записи этой сессии),
-    # а не весь count из БД включая предыдущие запуски.
     try:
         count_before = _get_total_count(country)
     except Exception:
         count_before = 0
 
     try:
-        countries = (
-            _ALL_COUNTRIES if country == "all" else [country]
-        )
+        countries = _ALL_COUNTRIES if country == "all" else [country]
         for c in countries:
             if stop_event.is_set():
                 logger.info(f"Stop signal — halting at country={c}")
@@ -449,8 +423,6 @@ def _run_scraper_sync(
     finally:
         stopped_manually = stop_event.is_set()
 
-        # Реальный count из БД — источник правды.
-        # _scrape_state["saved"] отстаёт из-за WebSocket queue.
         try:
             count_after = _get_total_count(country)
             actual_saved = max(0, count_after - count_before)
@@ -472,96 +444,87 @@ def _run_scraper_sync(
         )
 
 
-    def _scrape_one(
-        country: str,
-        workers: int,
-        fresh: bool,
-        auto: bool,
-        start_id: int,
-        end_id: int,
-    ) -> None:
-        """Парсит одну страну."""
-        if country == "all":
-            logger.error("_scrape_one called with country='all' — bug!")
+def _scrape_one(
+    country: str,
+    workers: int,
+    fresh: bool,
+    auto: bool,
+    start_id: int,
+    end_id: int,
+) -> None:
+    """Парсит одну страну."""
+    if country == "all":
+        logger.error("_scrape_one called with country='all' — bug!")
+        return
+
+    _kill_zombie_firefox()
+
+    # detect_range вызывается ДО проверки checkpoint —
+    # иначе страны с checkpoint > 100_000 пропускаются как "already done"
+    if auto:
+        try:
+            from core.range_detector import detect_range
+            start_id, end_id = detect_range(country)
+            logger.info(f"Auto range {country}: {start_id}..{end_id}")
+        except Exception as e:
+            logger.warning(f"Auto-detect failed for {country}: {e} — using defaults")
+            start_id = 1
+            end_id = 100_000
+
+    if not fresh:
+        from utils.checkpoint import load_checkpoint
+        saved_checkpoint = load_checkpoint(country, start_id)
+        if saved_checkpoint >= end_id:
+            logger.info(
+                f"Country {country}: checkpoint {saved_checkpoint} >= "
+                f"end_id {end_id} — already done, skipping"
+            )
             return
 
-        _kill_zombie_firefox()
+    count_before = sync_get_count(country)
 
-        # ── Определяем диапазон ──────────────────────────────────────────────
-        # auto=True: detect_range ВСЕГДА вызывается первым — до checkpoint.
-        # Иначе страны с checkpoint > дефолтного end_id=100_000 пропускаются.
-        if auto:
-            try:
-                from core.range_detector import detect_range
-                start_id, end_id = detect_range(country)
-                logger.info(f"Auto range {country}: {start_id}..{end_id}")
-            except Exception as e:
-                logger.warning(f"Auto-detect failed for {country}: {e} — using defaults")
-                start_id = 1
-                end_id = 100_000
+    try:
+        if workers > 1:
+            from core.profile_manager import ProfileManager
+            from core.worker_pool import WorkerPool
 
-        # ── Проверяем checkpoint ─────────────────────────────────────────────
-        # Только после определения реального end_id.
-        if not fresh:
-            from utils.checkpoint import load_checkpoint
-            saved_checkpoint = load_checkpoint(country, start_id)
-            if saved_checkpoint >= end_id:
-                logger.info(
-                    f"Country {country}: checkpoint {saved_checkpoint} >= "
-                    f"end_id {end_id} — already done, skipping"
-                )
-                return
+            manager = ProfileManager(count=max(workers, 10))
+            manager._reset_all_blocked()
+            manager.ensure_ready()
 
-        count_before = sync_get_count(country)
+            logger.info(
+                f"Country {country}: {manager.get_stats()['available']} "
+                f"profiles for {workers} workers"
+            )
 
-        try:
-            if workers > 1:
-                from core.profile_manager import ProfileManager
-                from core.worker_pool import WorkerPool
+            pool = WorkerPool(manager, _progress_queue)
+            pool.run(
+                country=country,
+                start_id=start_id,
+                end_id=end_id,
+                workers=workers,
+                resume=not fresh,
+            )
+        else:
+            from core.scraper import scrape_range
+            scrape_range(
+                country=country,
+                start_id=start_id,
+                end_id=end_id,
+                resume=not fresh,
+            )
+    except Exception as e:
+        logger.error(f"Error scraping {country}: {e}")
 
-                manager = ProfileManager(count=max(workers, 10))
-                manager._reset_all_blocked()
-                manager.ensure_ready()
-
-                stats = manager.get_stats()
-                logger.info(
-                    f"Country {country}: {stats['available']} profiles "
-                    f"for {workers} workers"
-                )
-
-                pool = WorkerPool(manager, _progress_queue)
-                pool.run(
-                    country=country,
-                    start_id=start_id,
-                    end_id=end_id,
-                    workers=workers,
-                    resume=not fresh,
-                )
-            else:
-                from core.scraper import scrape_range
-                scrape_range(
-                    country=country,
-                    start_id=start_id,
-                    end_id=end_id,
-                    resume=not fresh,
-                )
-        except Exception as e:
-            logger.error(f"Error scraping {country}: {e}")
-
-        count_after = sync_get_count(country)
-        logger.info(
-            f"=== Country {country.upper()} done: "
-            f"total in DB={count_after}, "
-            f"new this session={count_after - count_before} ==="
-        )
+    count_after = sync_get_count(country)
+    logger.info(
+        f"=== Country {country.upper()} done: "
+        f"total in DB={count_after}, "
+        f"new this session={count_after - count_before} ==="
+    )
 
 
 def _kill_zombie_firefox() -> None:
-    """
-    Убивает zombie/orphan Firefox (camoufox) процессы.
-    Вызывается перед стартом каждой страны чтобы
-    не накапливались мёртвые процессы.
-    """
     import subprocess
     try:
         result = subprocess.run(
@@ -574,14 +537,10 @@ def _kill_zombie_firefox() -> None:
     except Exception as e:
         logger.debug(f"pkill camoufox: {e}")
 
-# ─── SIGTERM handler для systemd ──────────────────────────────────────────────
+
+# ─── SIGTERM handler ──────────────────────────────────────────────────────────
 
 def _setup_signal_handlers() -> None:
-    """
-    systemctl stop → SIGTERM → stop_event.set()
-    → воркеры завершаются корректно → uvicorn shutdown.
-    Без этого Firefox процессы остаются зомби.
-    """
     def _handle_sigterm(signum, frame):
         logger.info("SIGTERM received — setting stop_event")
         stop_event.set()
