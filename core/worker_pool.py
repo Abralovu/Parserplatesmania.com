@@ -20,13 +20,9 @@ _STAGGER_DELAY_S = 5
 _MAX_SESSION_RETRIES = 3
 _MAX_CONSECUTIVE_FAILURES = 5
 
-# Максимум одновременно живых Firefox процессов.
-# 3 Firefox × ~500MB = 1.5GB + OS + Python = ~3.5GB из 7.6GB.
-_MAX_CONCURRENT_BROWSERS = 3
+_MAX_CONCURRENT_BROWSERS = 6
 
-# Skip пустых диапазонов:
-# если 30 ID подряд пустые — прыгаем на 3000 вперёд.
-# Это ускоряет парсинг разреженных диапазонов в 10-50x.
+
 _EMPTY_SKIP_THRESHOLD = 30
 _EMPTY_SKIP_JUMP = 3000
 
