@@ -22,8 +22,7 @@ _MAX_CONSECUTIVE_FAILURES = 5
 
 # Максимум одновременно живых Firefox процессов.
 # 3 Firefox × ~500MB = 1.5GB + OS + Python = ~3.5GB из 7.6GB.
-# Остаток 4GB — swap буфер на пиковые нагрузки.
-# При большем количестве воркеров они ждут в очереди — не падают по OOM.
+# При большем числе воркеров — ждут в очереди, OOM исключён.
 _MAX_CONCURRENT_BROWSERS = 3
 
 _FATAL_SESSION_ERRORS = (
@@ -59,9 +58,6 @@ class WorkerPool:
     ):
         self._manager = profile_manager
         self._progress_queue = progress_queue or Queue()
-        # Semaphore — сердце защиты от OOM.
-        # Независимо от числа воркеров, одновременно живёт не более
-        # _MAX_CONCURRENT_BROWSERS Firefox процессов.
         self._browser_semaphore = threading.Semaphore(_MAX_CONCURRENT_BROWSERS)
 
     def run(
@@ -236,25 +232,29 @@ class WorkerPool:
         """
         Запускает BrowserSession под защитой Semaphore.
 
-        Semaphore гарантирует что одновременно живёт не более
-        _MAX_CONCURRENT_BROWSERS Firefox процессов.
-        Если слоты заняты — поток ждёт освобождения.
-        Это единственная защита от OOM при большом числе воркеров.
+        Ждёт свободный слот с проверкой stop_event каждые 5 секунд.
+        Это гарантирует что:
+        1. Никогда не теряем блок из-за timeout
+        2. Корректно завершаемся при stop_event
+        3. Максимум _MAX_CONCURRENT_BROWSERS Firefox живут одновременно
         """
         crashed = False
         browser_dead = False
         consecutive_blocks = 0
 
-        # Ждём свободного слота — не более _MAX_CONCURRENT_BROWSERS браузеров одновременно
+        # Ждём слот без фиксированного timeout.
+        # Проверяем stop_event каждые 5 секунд чтобы не висеть вечно.
         logger.debug(f"Worker {task.worker_id}: waiting for browser slot...")
-        acquired = self._browser_semaphore.acquire(timeout=300)
-        if not acquired:
-            logger.error(f"Worker {task.worker_id}: browser slot timeout — skipping block")
-            result_container.update({
-                "processed": processed, "saved": saved,
-                "batch": batch, "profile_path": profile_path, "crashed": True,
-            })
-            return
+        while not self._browser_semaphore.acquire(timeout=5):
+            if stop_event.is_set():
+                result_container.update({
+                    "processed": processed,
+                    "saved": saved,
+                    "batch": batch,
+                    "profile_path": profile_path,
+                    "crashed": False,
+                })
+                return
 
         logger.debug(f"Worker {task.worker_id}: browser slot acquired")
 
@@ -336,9 +336,7 @@ class WorkerPool:
             crashed = True
 
         finally:
-            # ВАЖНО: освобождаем слот только после того как Firefox полностью закрыт.
-            # BrowserSession.__exit__ уже вызван (with-блок завершён),
-            # Firefox процесс убит через _force_kill_firefox.
+            # Release гарантирован даже при crash — дедлок невозможен.
             self._browser_semaphore.release()
             logger.debug(f"Worker {task.worker_id}: browser slot released")
 
