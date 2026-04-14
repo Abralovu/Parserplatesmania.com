@@ -24,7 +24,6 @@ _BLOCK_MARKERS = [
     "access denied",
 ]
 
-# Нейтральные сайты для первичного прогрева профиля
 _WARMUP_SITES = [
     "https://www.google.com",
     "https://www.wikipedia.org",
@@ -178,7 +177,6 @@ class BrowserSession:
         if stop_event.is_set():
             return None
 
-        self._simulate_reading()
         html = self._page.content()
 
         if _is_blocked(html):
@@ -188,21 +186,15 @@ class BrowserSession:
                 logger.error("Re-warmup failed — KillBot still blocking")
             return None
 
+        if "img-responsive" in html:
+            self._simulate_reading()
+
         return html
-
+    
     def _warmup(self) -> bool:
-        """
-        Прогрев сессии перед парсингом.
-
-        Первая сессия: нейтральные сайты + KillBot bypass.
-        Повторные сессии: только KillBot bypass если нужен.
-        Это экономит 15-30 секунд на каждый блок SESSION_SIZE.
-        """
         if stop_event.is_set():
             return False
 
-        # Нейтральные сайты — только при первом запуске профиля.
-        # При повторных сессиях профиль уже имеет cookies и историю.
         if self._is_first_session:
             neutral_sites = random.sample(_WARMUP_SITES, k=min(2, len(_WARMUP_SITES)))
             for site_url in neutral_sites:
