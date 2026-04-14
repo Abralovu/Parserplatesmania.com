@@ -1,0 +1,22 @@
+[Unit]
+Description=PlatesMania Scraper v2.0
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/Parserplatesmania.com
+EnvironmentFile=/root/Parserplatesmania.com/.env
+ExecStart=/root/Parserplatesmania.com/venv/bin/python main.py web
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+KillSignal=SIGTERM
+TimeoutStopSec=60
+LimitNOFILE=65536
+Environment=HEADLESS=true
+Environment=LOG_LEVEL=INFO
+
+[Install]
+WantedBy=multi-user.target
