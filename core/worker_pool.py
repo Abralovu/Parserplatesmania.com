@@ -16,19 +16,10 @@ from utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-# ─── Константы ────────────────────────────────────────────────────────────────
-
-# Задержка между запусками воркеров — предотвращает одновременный
-# malloc нескольких Firefox процессов (segfault при 8+ одновременных).
 _STAGGER_DELAY_S = 5
-
-# Максимум retry для одного блока SESSION_SIZE.
 _MAX_SESSION_RETRIES = 3
-
-# Если N блоков подряд упали — поток сломан, останавливаем воркер.
 _MAX_CONSECUTIVE_FAILURES = 5
 
-# Ошибки при которых browser мёртв и продолжать fetch бессмысленно.
 _FATAL_SESSION_ERRORS = (
     "browser has been closed",
     "target page, context or browser",
@@ -38,7 +29,6 @@ _FATAL_SESSION_ERRORS = (
 
 @dataclass
 class WorkerProgress:
-    """Прогресс одного воркера для веб-панели."""
     worker_id: int
     processed: int
     saved: int
@@ -48,7 +38,6 @@ class WorkerProgress:
 
 @dataclass
 class ScrapeTask:
-    """Задача одного воркера — диапазон ID и профиль."""
     worker_id: int
     country: str
     start_id: int
@@ -73,10 +62,6 @@ class WorkerPool:
         workers: int,
         resume: bool = True,
     ) -> dict:
-        """
-        Запускает N воркеров для парсинга диапазона ID.
-        Возвращает итоговую статистику.
-        """
         actual_start = load_checkpoint(country, start_id) if resume else start_id
         tasks = self._split_range(country, actual_start, end_id, workers)
 
@@ -103,10 +88,8 @@ class WorkerPool:
             threading.Thread(target=run_and_collect, args=(task,), daemon=True)
             for task in tasks
         ]
-
         for t in threads:
             t.start()
-
         for t in threads:
             t.join()
 
@@ -121,17 +104,7 @@ class WorkerPool:
         )
         return stats
 
-    # ─── Приватные методы ─────────────────────────────────────────────────
-
     def _run_worker(self, task: ScrapeTask) -> dict:
-        """
-        Один воркер — парсит свой диапазон ID блоками по SESSION_SIZE.
-
-        Каждый блок запускается в одноразовом threading.Thread.
-        Поток живёт ровно одну BrowserSession, потом уничтожается.
-        Это гарантирует чистое thread-local состояние — никакого
-        asyncio loop мусора от Playwright предыдущей сессии.
-        """
         if task.worker_id > 0:
             stagger = task.worker_id * _STAGGER_DELAY_S
             logger.info(f"Worker {task.worker_id}: stagger {stagger}s")
@@ -154,7 +127,7 @@ class WorkerPool:
 
         session_starts = range(0, task.end_id - task.start_id + 1, SESSION_SIZE)
 
-        for session_offset in session_starts:
+        for block_index, session_offset in enumerate(session_starts):
             if stop_event.is_set():
                 break
 
@@ -170,24 +143,22 @@ class WorkerPool:
                 min(task.start_id + session_offset + SESSION_SIZE, task.end_id + 1),
             ))
 
-            session_ok = False
+            # Первый блок = первая сессия профиля (нужен полный warmup).
+            # Последующие = профиль уже прогрет, только KillBot check.
+            is_first_session = (block_index == 0)
 
+            session_ok = False
             for retry in range(_MAX_SESSION_RETRIES):
                 if stop_event.is_set():
                     break
 
-                # ── Ключевое решение ──────────────────────────────────────
-                # Каждая BrowserSession запускается в новом одноразовом
-                # потоке. После завершения поток уничтожается вместе
-                # с thread-local состоянием Playwright.
-                # Следующий блок получает абсолютно чистый поток —
-                # asyncio loop мусора нет.
-                # ---------------------------------------------------------
                 result_container: dict = {}
                 session_thread = threading.Thread(
                     target=self._run_session_in_thread,
-                    args=(task, session_ids, batch, processed, saved,
-                          profile_path, result_container),
+                    args=(
+                        task, session_ids, batch, processed, saved,
+                        profile_path, result_container, is_first_session,
+                    ),
                     daemon=True,
                 )
                 session_thread.start()
@@ -195,8 +166,7 @@ class WorkerPool:
 
                 if not result_container:
                     logger.error(
-                        f"Worker {task.worker_id}: session thread "
-                        f"returned no result"
+                        f"Worker {task.worker_id}: session thread returned no result"
                     )
                     continue
 
@@ -215,6 +185,8 @@ class WorkerPool:
                         f"{retry + 1}/{_MAX_SESSION_RETRIES} "
                         f"block {session_ids[0]}..{session_ids[-1]}"
                     )
+                    # После crash — следующая попытка тоже требует полного warmup
+                    is_first_session = True
 
             if session_ok:
                 consecutive_failures = 0
@@ -227,7 +199,6 @@ class WorkerPool:
                         f"failed after {_MAX_SESSION_RETRIES} retries — skipping"
                     )
 
-        # Финальный flush батча
         if batch:
             count = sync_save_batch(batch)
             saved += count
@@ -252,22 +223,18 @@ class WorkerPool:
         saved: int,
         profile_path: str,
         result_container: dict,
+        is_first_session: bool = True,
     ) -> None:
-        """
-        Запускает одну BrowserSession в изолированном потоке.
-
-        Поток одноразовый — создаётся для одного блока SESSION_SIZE
-        и уничтожается после. Thread-local Playwright состояние
-        уничтожается вместе с потоком.
-
-        Результат пишется в result_container (dict передан по ссылке).
-        """
         crashed = False
         browser_dead = False
         consecutive_blocks = 0
 
         try:
-            with BrowserSession(task.country, profile_path) as session:
+            with BrowserSession(
+                task.country,
+                profile_path,
+                is_first_session=is_first_session,
+            ) as session:
                 for pid in session_ids:
                     if stop_event.is_set():
                         break
@@ -326,8 +293,7 @@ class WorkerPool:
                         err_lower = str(e).lower()
                         if any(f in err_lower for f in _FATAL_SESSION_ERRORS):
                             logger.error(
-                                f"Worker {task.worker_id}: browser dead "
-                                f"id={pid}: {e}"
+                                f"Worker {task.worker_id}: browser dead id={pid}: {e}"
                             )
                             browser_dead = True
                             break
@@ -357,18 +323,12 @@ class WorkerPool:
         })
 
     def _handle_profile_block(self, worker_id: int, current_path: str) -> str:
-        """
-        Профиль заблокирован — берём следующий.
-        Если свободных нет — ждём до 5 минут с проверкой stop_event.
-        """
         logger.warning(f"Worker {worker_id}: 5 blocks — switching profile")
         self._manager.mark_blocked(current_path)
         new_path = self._manager.get_next_profile()
 
         if new_path:
-            logger.info(
-                f"Worker {worker_id}: switched to {_profile_name(new_path)}"
-            )
+            logger.info(f"Worker {worker_id}: switched to {_profile_name(new_path)}")
             return new_path
 
         logger.error(f"Worker {worker_id}: no profiles — pausing 5min")
@@ -392,16 +352,10 @@ class WorkerPool:
         end_id: int,
         workers: int,
     ) -> list[ScrapeTask]:
-        """
-        Делит диапазон ID между воркерами.
-        Количество воркеров ≤ количества доступных профилей.
-        Каждый воркер получает уникальный профиль.
-        """
         available_profiles = self._manager.get_stats()["available"]
         if workers > available_profiles:
             logger.warning(
-                f"Reducing workers {workers} → {available_profiles} "
-                f"(profile limit)"
+                f"Reducing workers {workers} → {available_profiles} (profile limit)"
             )
             workers = available_profiles
 
@@ -435,15 +389,9 @@ class WorkerPool:
                 end_id=chunk_end,
                 profile_path=profile_path,
             ))
-            logger.debug(
-                f"Worker {i}: range={chunk_start}..{chunk_end}, "
-                f"profile={_profile_name(profile_path)}"
-            )
 
         return tasks
 
-
-# ─── Утилиты ──────────────────────────────────────────────────────────────────
 
 def _profile_name(path: str) -> str:
     return os.path.basename(path) if path else "unknown"
