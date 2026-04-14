@@ -20,6 +20,12 @@ _STAGGER_DELAY_S = 5
 _MAX_SESSION_RETRIES = 3
 _MAX_CONSECUTIVE_FAILURES = 5
 
+# Максимум одновременно живых Firefox процессов.
+# 3 Firefox × ~500MB = 1.5GB + OS + Python = ~3.5GB из 7.6GB.
+# Остаток 4GB — swap буфер на пиковые нагрузки.
+# При большем количестве воркеров они ждут в очереди — не падают по OOM.
+_MAX_CONCURRENT_BROWSERS = 3
+
 _FATAL_SESSION_ERRORS = (
     "browser has been closed",
     "target page, context or browser",
@@ -53,6 +59,10 @@ class WorkerPool:
     ):
         self._manager = profile_manager
         self._progress_queue = progress_queue or Queue()
+        # Semaphore — сердце защиты от OOM.
+        # Независимо от числа воркеров, одновременно живёт не более
+        # _MAX_CONCURRENT_BROWSERS Firefox процессов.
+        self._browser_semaphore = threading.Semaphore(_MAX_CONCURRENT_BROWSERS)
 
     def run(
         self,
@@ -72,7 +82,8 @@ class WorkerPool:
         logger.info(
             f"Starting pool: country={country}, "
             f"range={actual_start}..{end_id}, "
-            f"workers={len(tasks)}"
+            f"workers={len(tasks)}, "
+            f"max_browsers={_MAX_CONCURRENT_BROWSERS}"
         )
 
         stats = {"processed": 0, "saved": 0, "workers": len(tasks)}
@@ -143,11 +154,9 @@ class WorkerPool:
                 min(task.start_id + session_offset + SESSION_SIZE, task.end_id + 1),
             ))
 
-            # Первый блок = первая сессия профиля (нужен полный warmup).
-            # Последующие = профиль уже прогрет, только KillBot check.
             is_first_session = (block_index == 0)
-
             session_ok = False
+
             for retry in range(_MAX_SESSION_RETRIES):
                 if stop_event.is_set():
                     break
@@ -185,7 +194,6 @@ class WorkerPool:
                         f"{retry + 1}/{_MAX_SESSION_RETRIES} "
                         f"block {session_ids[0]}..{session_ids[-1]}"
                     )
-                    # После crash — следующая попытка тоже требует полного warmup
                     is_first_session = True
 
             if session_ok:
@@ -225,9 +233,30 @@ class WorkerPool:
         result_container: dict,
         is_first_session: bool = True,
     ) -> None:
+        """
+        Запускает BrowserSession под защитой Semaphore.
+
+        Semaphore гарантирует что одновременно живёт не более
+        _MAX_CONCURRENT_BROWSERS Firefox процессов.
+        Если слоты заняты — поток ждёт освобождения.
+        Это единственная защита от OOM при большом числе воркеров.
+        """
         crashed = False
         browser_dead = False
         consecutive_blocks = 0
+
+        # Ждём свободного слота — не более _MAX_CONCURRENT_BROWSERS браузеров одновременно
+        logger.debug(f"Worker {task.worker_id}: waiting for browser slot...")
+        acquired = self._browser_semaphore.acquire(timeout=300)
+        if not acquired:
+            logger.error(f"Worker {task.worker_id}: browser slot timeout — skipping block")
+            result_container.update({
+                "processed": processed, "saved": saved,
+                "batch": batch, "profile_path": profile_path, "crashed": True,
+            })
+            return
+
+        logger.debug(f"Worker {task.worker_id}: browser slot acquired")
 
         try:
             with BrowserSession(
@@ -305,6 +334,13 @@ class WorkerPool:
         except Exception as e:
             logger.error(f"Worker {task.worker_id}: session crashed: {e}")
             crashed = True
+
+        finally:
+            # ВАЖНО: освобождаем слот только после того как Firefox полностью закрыт.
+            # BrowserSession.__exit__ уже вызван (with-блок завершён),
+            # Firefox процесс убит через _force_kill_firefox.
+            self._browser_semaphore.release()
+            logger.debug(f"Worker {task.worker_id}: browser slot released")
 
         if browser_dead:
             crashed = True
