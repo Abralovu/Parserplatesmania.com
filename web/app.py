@@ -387,8 +387,6 @@ def _save_session_to_history(
             logger.error(f"Cannot save history: {e}")
 
 
-# ─── Фоновый запуск парсера ───────────────────────────────────────────────────
-
 def _run_scraper_sync(
     country: str,
     workers: int,
@@ -408,14 +406,10 @@ def _run_scraper_sync(
         count_before = 0
 
     try:
-        countries = _ALL_COUNTRIES if country == "all" else [country]
-        for c in countries:
-            if stop_event.is_set():
-                logger.info(f"Stop signal — halting at country={c}")
-                break
-            with _state_lock:
-                _scrape_state["country"] = c
-            _scrape_one(c, workers, fresh, auto, start_id, end_id)
+        if country == "all":
+            _scrape_global(workers, fresh)
+        else:
+            _scrape_one(country, workers, fresh, auto, start_id, end_id)
     except Exception as e:
         logger.error(f"Scraper fatal error: {e}")
         with _state_lock:
@@ -441,6 +435,50 @@ def _run_scraper_sync(
             started_at=started_at,
             finished_at=datetime.utcnow().isoformat(),
             stopped_manually=stopped_manually,
+        )
+
+
+def _scrape_global(workers: int, fresh: bool) -> None:
+
+    _kill_zombie_firefox()
+
+    global_start = 1
+    global_end = 31_749_218  
+
+    from utils.checkpoint import load_checkpoint
+    actual_start = load_checkpoint("global", global_start) if not fresh else global_start
+
+    logger.info(
+        f"Global scrape: range={actual_start}..{global_end}, "
+        f"workers={workers}"
+    )
+
+    with _state_lock:
+        _scrape_state["country"] = "global"
+
+    if workers > 1:
+        from core.profile_manager import ProfileManager
+        from core.worker_pool import WorkerPool
+
+        manager = ProfileManager(count=max(workers, 10))
+        manager._reset_all_blocked()
+        manager.ensure_ready()
+
+        pool = WorkerPool(manager, _progress_queue)
+        pool.run(
+            country="global",
+            start_id=actual_start,
+            end_id=global_end,
+            workers=workers,
+            resume=not fresh,
+        )
+    else:
+        from core.scraper import scrape_range
+        scrape_range(
+            country="global",
+            start_id=actual_start,
+            end_id=global_end,
+            resume=not fresh,
         )
 
 
