@@ -22,8 +22,13 @@ _MAX_CONSECUTIVE_FAILURES = 5
 
 # Максимум одновременно живых Firefox процессов.
 # 3 Firefox × ~500MB = 1.5GB + OS + Python = ~3.5GB из 7.6GB.
-# При большем числе воркеров — ждут в очереди, OOM исключён.
 _MAX_CONCURRENT_BROWSERS = 3
+
+# Skip пустых диапазонов:
+# если 30 ID подряд пустые — прыгаем на 3000 вперёд.
+# Это ускоряет парсинг разреженных диапазонов в 10-50x.
+_EMPTY_SKIP_THRESHOLD = 30
+_EMPTY_SKIP_JUMP = 3000
 
 _FATAL_SESSION_ERRORS = (
     "browser has been closed",
@@ -229,21 +234,11 @@ class WorkerPool:
         result_container: dict,
         is_first_session: bool = True,
     ) -> None:
-        """
-        Запускает BrowserSession под защитой Semaphore.
-
-        Ждёт свободный слот с проверкой stop_event каждые 5 секунд.
-        Это гарантирует что:
-        1. Никогда не теряем блок из-за timeout
-        2. Корректно завершаемся при stop_event
-        3. Максимум _MAX_CONCURRENT_BROWSERS Firefox живут одновременно
-        """
         crashed = False
         browser_dead = False
         consecutive_blocks = 0
+        consecutive_empty = 0  # счётчик пустых ID подряд для skip логики
 
-        # Ждём слот без фиксированного timeout.
-        # Проверяем stop_event каждые 5 секунд чтобы не висеть вечно.
         logger.debug(f"Worker {task.worker_id}: waiting for browser slot...")
         while not self._browser_semaphore.acquire(timeout=5):
             if stop_event.is_set():
@@ -260,25 +255,50 @@ class WorkerPool:
 
         try:
             with BrowserSession(
-                task.country if task.country != "global" else "ua",
+                task.country,
                 profile_path,
                 is_first_session=is_first_session,
             ) as session:
-                for pid in session_ids:
+                # Используем индекс вместо for-in чтобы поддерживать skip
+                pid_index = 0
+                while pid_index < len(session_ids):
                     if stop_event.is_set():
                         break
+
+                    pid = session_ids[pid_index]
+                    pid_index += 1
 
                     try:
                         if sync_id_exists(pid):
                             processed += 1
                             continue
 
-                        _country_url = task.country if task.country != "global" else "ru"
-                        html = session.fetch(f"{BASE_URL}/{_country_url}/nomer{pid}")
+                        html = session.fetch(
+                            f"{BASE_URL}/{task.country}/nomer{pid}"
+                        )
 
                         if not html:
                             consecutive_blocks += 1
+                            consecutive_empty += 1
                             processed += 1
+
+                            # Skip пустого диапазона:
+                            # 30 пустых ID подряд → прыгаем на 3000 вперёд.
+                            # Сдвигаем pid_index до первого ID >= (pid + jump).
+                            if consecutive_empty >= _EMPTY_SKIP_THRESHOLD:
+                                skip_to = pid + _EMPTY_SKIP_JUMP
+                                while (
+                                    pid_index < len(session_ids)
+                                    and session_ids[pid_index] < skip_to
+                                ):
+                                    pid_index += 1
+                                logger.info(
+                                    f"Worker {task.worker_id}: "
+                                    f"{consecutive_empty} empty IDs — "
+                                    f"jumping to id≈{skip_to}"
+                                )
+                                consecutive_empty = 0
+
                             if consecutive_blocks >= 5:
                                 profile_path = self._handle_profile_block(
                                     task.worker_id, profile_path
@@ -288,10 +308,13 @@ class WorkerPool:
                             continue
 
                         consecutive_blocks = 0
+                        consecutive_empty = 0
                         record = parse_plate_page(html, pid, task.country)
 
                         if record:
-                            local = download_photo(record.photo_url, pid, record.country)
+                            local = download_photo(
+                                record.photo_url, pid, record.country
+                            )
                             record.local_path = local
                             batch.append(record)
 
@@ -337,7 +360,6 @@ class WorkerPool:
             crashed = True
 
         finally:
-            # Release гарантирован даже при crash — дедлок невозможен.
             self._browser_semaphore.release()
             logger.debug(f"Worker {task.worker_id}: browser slot released")
 

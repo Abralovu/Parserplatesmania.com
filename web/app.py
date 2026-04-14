@@ -439,48 +439,65 @@ def _run_scraper_sync(
 
 
 def _scrape_global(workers: int, fresh: bool) -> None:
+    """
+    Параллельный парсинг всех стран одновременно.
 
+    Страны разбиты по приоритету (объём фото на сайте).
+    При 6 воркерах: 3 страны × 2 воркера одновременно.
+    Каждая страна парсит свой диапазон ID через правильный URL префикс.
+    После завершения группы — следующая группа.
+    """
     _kill_zombie_firefox()
 
-    global_start = 1
-    global_end = 31_749_218  
+    # Приоритет по количеству фото на сайте
+    priority_countries = [
+        "ru", "ua", "de", "pl", "by",
+        "kz", "lt", "lv", "ee", "fr",
+        "it", "es", "nl", "be", "at",
+        "ch", "se", "no", "fi", "dk",
+        "cz", "sk", "hu", "ro", "bg",
+        "rs", "hr", "gr", "pt", "tr",
+        "am", "ge", "az", "uz", "kg",
+        "md", "il", "ae", "cn", "jp",
+        "kr", "gb", "us",
+    ]
 
-    from utils.checkpoint import load_checkpoint
-    actual_start = load_checkpoint("global", global_start) if not fresh else global_start
+    # При 6 воркерах: 3 страны параллельно по 2 воркера каждая
+    # При 3 воркерах: 3 страны параллельно по 1 воркеру
+    countries_at_once = 3
+    workers_per_country = max(1, workers // countries_at_once)
 
     logger.info(
-        f"Global scrape: range={actual_start}..{global_end}, "
-        f"workers={workers}"
+        f"Global parallel scrape: {countries_at_once} countries at once, "
+        f"{workers_per_country} workers per country"
     )
 
-    with _state_lock:
-        _scrape_state["country"] = "global"
+    for i in range(0, len(priority_countries), countries_at_once):
+        if stop_event.is_set():
+            break
 
-    if workers > 1:
-        from core.profile_manager import ProfileManager
-        from core.worker_pool import WorkerPool
+        group = priority_countries[i:i + countries_at_once]
+        logger.info(f"Starting group: {group}")
 
-        manager = ProfileManager(count=max(workers, 10))
-        manager._reset_all_blocked()
-        manager.ensure_ready()
+        with _state_lock:
+            _scrape_state["country"] = "+".join(group)
 
-        pool = WorkerPool(manager, _progress_queue)
-        pool.run(
-            country="global",
-            start_id=actual_start,
-            end_id=global_end,
-            workers=workers,
-            resume=not fresh,
-        )
-    else:
-        from core.scraper import scrape_range
-        scrape_range(
-            country="global",
-            start_id=actual_start,
-            end_id=global_end,
-            resume=not fresh,
-        )
+        group_threads = []
+        for country in group:
+            if stop_event.is_set():
+                break
+            t = threading.Thread(
+                target=_scrape_one,
+                args=(country, workers_per_country, fresh, True, 1, 100_000),
+                daemon=True,
+            )
+            group_threads.append(t)
+            t.start()
 
+        for t in group_threads:
+            t.join()
+
+        logger.info(f"Group {group} done")
 
 def _scrape_one(
     country: str,
