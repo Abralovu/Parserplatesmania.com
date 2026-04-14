@@ -260,7 +260,7 @@ class WorkerPool:
 
         try:
             with BrowserSession(
-                task.country,
+                task.country if task.country != "global" else "ua",
                 profile_path,
                 is_first_session=is_first_session,
             ) as session:
@@ -273,7 +273,8 @@ class WorkerPool:
                             processed += 1
                             continue
 
-                        html = session.fetch(f"{BASE_URL}/{task.country}/nomer{pid}")
+                        _country_url = task.country if task.country != "global" else "ru"
+                        html = session.fetch(f"{BASE_URL}/{_country_url}/nomer{pid}")
 
                         if not html:
                             consecutive_blocks += 1
@@ -290,7 +291,7 @@ class WorkerPool:
                         record = parse_plate_page(html, pid, task.country)
 
                         if record:
-                            local = download_photo(record.photo_url, pid, task.country)
+                            local = download_photo(record.photo_url, pid, record.country)
                             record.local_path = local
                             batch.append(record)
 
